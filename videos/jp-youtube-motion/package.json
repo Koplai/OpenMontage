@@ -1,0 +1,13 @@
+{
+  "name": "jp-youtube-motion",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.8.4 preview",
+    "check": "npx --yes hyperframes@0.8.4 check --samples 15 --at-transitions --strict",
+    "render": "npx --yes hyperframes@0.8.4 render",
+    "render:en": "npx --yes hyperframes@0.8.4 render --variables '{\"language\":\"en\"}' --strict-variables --output renders/jp-youtube-ident-en.mp4 --fps 30 --quality high",
+    "render:es": "npx --yes hyperframes@0.8.4 render --variables '{\"language\":\"es\"}' --strict-variables --output renders/jp-youtube-ident-es.mp4 --fps 30 --quality high",
+    "publish": "npx --yes hyperframes@0.8.4 publish"
+  }
+}

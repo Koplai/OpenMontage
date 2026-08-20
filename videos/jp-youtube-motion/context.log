@@ -1,0 +1,6 @@
+2026-08-20T23:01:00+02:00 route=motion-graphics category=kinetic-type
+input=static YouTube brand board derived from jpmarquez.com
+output=10-second browser-playable HyperFrames composition
+runtime=hyperframes authoring=atelier sample=true
+audio=none cost_usd=0
+assets=local portrait + local Satoshi fonts + local GSAP runtime

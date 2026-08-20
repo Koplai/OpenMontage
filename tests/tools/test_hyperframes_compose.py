@@ -397,6 +397,7 @@ def test_hyperframes_render_resolves_relative_output_path_once(tmp_path, monkeyp
     monkeypatch.setattr(tool, "_scaffold", lambda inputs: ToolResult(success=True, data={}))
     monkeypatch.setattr(tool, "_lint", lambda inputs: ToolResult(success=True, data={}))
     monkeypatch.setattr(tool, "_validate", lambda inputs: ToolResult(success=True, data={}))
+    monkeypatch.setattr(tool, "_inspect", lambda inputs: ToolResult(success=True, data={}))
 
     def run_render(args, *, cwd, timeout, check):
         output = Path(args[args.index("--output") + 1])
@@ -415,6 +416,81 @@ def test_hyperframes_render_resolves_relative_output_path_once(tmp_path, monkeyp
     assert result.success, result.error
     assert result.data["output"] == str(expected)
     assert result.artifacts == [str(expected)]
+
+
+def test_hyperframes_text_overflow_is_blocking_at_every_severity():
+    for severity in ("error", "warning", "info"):
+        report = {
+            "layout": {
+                "findings": [
+                    {
+                        "code": "text_box_overflow",
+                        "severity": severity,
+                        "selector": "#card strong",
+                        "text": "Governance",
+                    }
+                ]
+            }
+        }
+        failures = HyperFramesCompose._text_layout_failures(report)
+        assert len(failures) == 1
+        assert failures[0]["severity"] == severity
+
+
+def test_hyperframes_text_layout_gate_ignores_non_text_decoration():
+    report = {
+        "layout": {
+            "findings": [
+                {
+                    "code": "canvas_overflow",
+                    "severity": "info",
+                    "selector": "#decorative-orbit",
+                    "text": "",
+                }
+            ]
+        }
+    }
+    assert HyperFramesCompose._text_layout_failures(report) == []
+
+
+def test_hyperframes_check_samples_transitions_and_blocks_info_text_overflow(
+    tmp_path, monkeypatch
+):
+    import subprocess
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "index.html").write_text("<html></html>", encoding="utf-8")
+    tool = HyperFramesCompose()
+    captured_args = []
+    report = {
+        "ok": True,
+        "layout": {
+            "findings": [
+                {
+                    "code": "text_box_overflow",
+                    "severity": "info",
+                    "selector": "#card strong",
+                    "text": "Architecture",
+                }
+            ]
+        },
+    }
+
+    def run_check(args, *, cwd, timeout, check):
+        captured_args.extend(args)
+        return subprocess.CompletedProcess(args, 0, json.dumps(report), "")
+
+    monkeypatch.setattr(tool, "_run_hf", run_check)
+
+    result = tool._check({"workspace_path": str(workspace)})
+
+    assert not result.success
+    assert "--samples" in captured_args
+    assert captured_args[captured_args.index("--samples") + 1] == "15"
+    assert "--at-transitions" in captured_args
+    assert "--strict" in captured_args
+    assert len(result.data["text_layout_failures"]) == 1
 
 
 # ------------------------------------------------------------------

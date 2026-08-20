@@ -271,10 +271,12 @@ stages:
       - Duration within +/-5% of target
       - "render_runtime in edit_decisions matches render_runtime locked in proposal_packet — any swap requires a render_runtime_selection decision in decision_log"
       - "HyperFrames renders MUST pass `hyperframes lint` and `hyperframes validate` before the render step — never skip validation"
+      - "HyperFrames layout QA MUST sample tween boundaries (`hyperframes check --samples 15 --at-transitions --strict`); every `text_box_overflow` or text `canvas_overflow` finding is critical regardless of reported severity"
       - "Post-render self-review MANDATORY: extract keyframes, visually inspect each scene, flag weak frames before presenting to user"
     success_criteria:
       - Schema-valid render_report artifact
       - Output file exists and passes ffprobe validation
+      - No text extends outside its card, caption, callout, or composition canvas at any sampled transition boundary
       - self_review_completed is true with per-scene quality notes
 
   - name: publish

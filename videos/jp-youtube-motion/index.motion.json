@@ -1,0 +1,12 @@
+{
+  "duration": 10,
+  "assertions": [
+    { "kind": "appearsBy", "selector": "#jp-tile", "bySec": 1.2 },
+    { "kind": "before", "a": "#jp-tile", "b": "#brand-lockup" },
+    { "kind": "appearsBy", "selector": "#motion-title", "bySec": 3.4 },
+    { "kind": "before", "a": "#motion-title", "b": "#node-governance" },
+    { "kind": "appearsBy", "selector": "#closing-title", "bySec": 7.4 },
+    { "kind": "staysInFrame", "selector": "#architecture-map" },
+    { "kind": "staysInFrame", "selector": "#portrait-wrap" }
+  ]
+}

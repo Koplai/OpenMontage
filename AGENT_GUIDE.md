@@ -582,6 +582,15 @@ The reviewer is a meta skill (`skills/meta/reviewer.md`) — advisory, never dir
 - Critical findings -> fix and re-review. Suggestions -> note and proceed.
 - Check playbook `quality_rules` as constraints, not suggestions.
 
+### Mandatory Video Layout Quality Gate
+
+Before presenting any generated video, run the runtime-specific automated checks and visually inspect representative keyframes from every scene and transition.
+
+- For HyperFrames, run `hyperframes check --samples 15 --at-transitions --strict` before rendering.
+- Treat every `text_box_overflow` and every text-bearing `canvas_overflow` as critical, regardless of whether the CLI labels it error, warning, or info.
+- Never suppress text overflow with `data-layout-allow-overflow`; that escape hatch is only for intentional non-text decoration or entrance/exit motion proven safe in snapshots.
+- After rendering, extract keyframes from every scene and transition, inspect them at final resolution, and fix all clipping, overlap, illegibility, unsafe margins, or weak visual hierarchy before delivery.
+
 ## Human Checkpoint Protocol
 
 The checkpoint protocol meta skill (`skills/meta/checkpoint-protocol.md`) teaches the agent when to pause:

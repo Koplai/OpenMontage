@@ -208,8 +208,11 @@ class HyperFramesCompose(BaseTool):
             },
             "strict_check": {
                 "type": "boolean",
-                "default": False,
-                "description": "Treat HyperFrames check warnings as errors.",
+                "default": True,
+                "description": (
+                    "Treat HyperFrames check warnings as errors. Final renders "
+                    "default to strict quality control."
+                ),
             },
             "snapshots": {
                 "type": "boolean",
@@ -675,7 +678,12 @@ class HyperFramesCompose(BaseTool):
                 success=False,
                 error=f"No index.html in {workspace}.",
             )
-        proc = self._run_hf(["inspect", "--json"], cwd=workspace, timeout=300, check=False)
+        proc = self._run_hf(
+            ["inspect", "--json", "--samples", "15", "--at-transitions", "--strict"],
+            cwd=workspace,
+            timeout=300,
+            check=False,
+        )
         data: dict[str, Any] = {"exit_code": proc.returncode}
         payload = self._parse_json_output(proc.stdout)
         if payload is not None:
@@ -683,11 +691,21 @@ class HyperFramesCompose(BaseTool):
         else:
             data["stdout_tail"] = (proc.stdout or "")[-4000:]
         data["stderr_tail"] = (proc.stderr or "")[-2000:]
-        ok = proc.returncode == 0
+        text_layout_failures = self._text_layout_failures(payload)
+        if text_layout_failures:
+            data["text_layout_failures"] = text_layout_failures
+        ok = proc.returncode == 0 and not text_layout_failures
         return ToolResult(
             success=ok,
             data=data,
-            error=None if ok else f"hyperframes inspect exit {proc.returncode}",
+            error=None
+            if ok
+            else (
+                "HyperFrames layout quality gate failed: "
+                f"{len(text_layout_failures)} text overflow finding(s)"
+                if text_layout_failures
+                else f"hyperframes inspect exit {proc.returncode}"
+            ),
         )
 
     def _check(self, inputs: dict[str, Any]) -> ToolResult:
@@ -695,10 +713,10 @@ class HyperFramesCompose(BaseTool):
         workspace = self._require_workspace(inputs)
         if not (workspace / "index.html").exists():
             return ToolResult(success=False, error=f"No index.html in {workspace}.")
-        args = ["check", "--json"]
+        args = ["check", "--json", "--samples", "15", "--at-transitions"]
         if inputs.get("skip_contrast", False):
             args.append("--no-contrast")
-        if inputs.get("strict_check", False):
+        if inputs.get("strict_check", True):
             args.append("--strict")
         if inputs.get("snapshots", False):
             args.append("--snapshots")
@@ -710,12 +728,39 @@ class HyperFramesCompose(BaseTool):
         else:
             data["stdout_tail"] = (proc.stdout or "")[-4000:]
         data["stderr_tail"] = (proc.stderr or "")[-2000:]
-        ok = proc.returncode == 0
+        text_layout_failures = self._text_layout_failures(payload)
+        if text_layout_failures:
+            data["text_layout_failures"] = text_layout_failures
+        ok = proc.returncode == 0 and not text_layout_failures
         return ToolResult(
             success=ok,
             data=data,
-            error=None if ok else f"hyperframes check exit {proc.returncode}",
+            error=None
+            if ok
+            else (
+                "HyperFrames quality gate failed: "
+                f"{len(text_layout_failures)} text overflow finding(s)"
+                if text_layout_failures
+                else f"hyperframes check exit {proc.returncode}"
+            ),
         )
+
+    @staticmethod
+    def _text_layout_failures(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+        """Return every text overflow finding, regardless of reported severity."""
+        if not payload:
+            return []
+        findings = payload.get("findings") or payload.get("issues") or []
+        layout = payload.get("layout")
+        if isinstance(layout, dict):
+            findings = [*findings, *(layout.get("findings") or [])]
+        return [
+            finding
+            for finding in findings
+            if isinstance(finding, dict)
+            and finding.get("code") in {"text_box_overflow", "canvas_overflow"}
+            and bool(finding.get("text"))
+        ]
 
     def _add_block(self, inputs: dict[str, Any]) -> ToolResult:
         """Install a registry block or component via `hyperframes add`.
@@ -826,7 +871,17 @@ class HyperFramesCompose(BaseTool):
                 data={"steps": steps},
             )
 
-        # 4. Render.
+        # 4. Inspect every transition boundary and block all text overflow.
+        inspect = self._inspect({"workspace_path": str(workspace)})
+        steps["inspect"] = inspect.data
+        if not inspect.success:
+            return ToolResult(
+                success=False,
+                error=f"Layout quality control failed: {inspect.error}",
+                data={"steps": steps},
+            )
+
+        # 5. Render.
         width, height, fps = self._resolve_dimensions(
             inputs.get("profile"), inputs.get("fps", 30)
         )
@@ -912,7 +967,7 @@ class HyperFramesCompose(BaseTool):
             {
                 "workspace_path": str(workspace),
                 "skip_contrast": inputs.get("skip_contrast", False),
-                "strict_check": inputs.get("strict_check", False),
+                "strict_check": inputs.get("strict_check", True),
                 "snapshots": inputs.get("snapshots", False),
             }
         )

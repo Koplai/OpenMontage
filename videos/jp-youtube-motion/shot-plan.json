@@ -1,0 +1,94 @@
+{
+  "category": "kinetic-type",
+  "duration_s": 10,
+  "fps": 30,
+  "canvas": {
+    "w": 1920,
+    "h": 1080,
+    "aspect": "16:9"
+  },
+  "style": "Premium field-architect ident: calm authority, evidence-first motion, asymmetric editorial composition, no generic AI spectacle.",
+  "palette": [
+    "#0A1628",
+    "#131E2E",
+    "#4A90E2",
+    "#C4A35A",
+    "#47607D",
+    "#F3F9FF"
+  ],
+  "font": "Satoshi",
+  "languages": {
+    "default": "es",
+    "variants": [
+      "es",
+      "en"
+    ],
+    "shared_design": true
+  },
+  "beats": [
+    0.2,
+    2.5,
+    4.66,
+    6.0,
+    7.5
+  ],
+  "export": "mp4",
+  "asset_needs": [],
+  "block": null,
+  "customize": {
+    "portrait": "./assets/profile-photo.webp",
+    "brand_lockup": "JP | MÁRQUEZ"
+  },
+  "content": {
+    "scenes": [
+      {
+        "id": "identity",
+        "start": 0,
+        "end": 2.5,
+        "text": "Juan Pedro Márquez",
+        "emphasis_words": [
+          "JP"
+        ],
+        "emotion": "credible",
+        "motion": "brand rail draw, tile settle, editorial lockup reveal",
+        "beats": [
+          0.2,
+          0.62,
+          0.86
+        ]
+      },
+      {
+        "id": "system",
+        "start": 2.5,
+        "end": 6.0,
+        "text": "AI in Production",
+        "emphasis_words": [
+          "Production"
+        ],
+        "emotion": "decisive",
+        "motion": "split-direction word reveal, SVG architecture paths, decision-node pulse",
+        "beats": [
+          2.66,
+          3.34,
+          4.66
+        ]
+      },
+      {
+        "id": "promise",
+        "start": 6.0,
+        "end": 10,
+        "text": "Calm. Direct. Defensible.",
+        "emphasis_words": [
+          "Defensible"
+        ],
+        "emotion": "assured",
+        "motion": "right-origin field wipe, portrait reveal, line lockup, final hold",
+        "beats": [
+          6.0,
+          6.6,
+          7.5
+        ]
+      }
+    ]
+  }
+}
