@@ -1,0 +1,170 @@
+<!doctype html>
+<html
+  lang="es"
+  data-composition-variables='[
+    {
+      "id": "language",
+      "type": "enum",
+      "label": "Language",
+      "default": "es",
+      "options": [
+        { "value": "es", "label": "Español" },
+        { "value": "en", "label": "English" }
+      ]
+    },
+    {
+      "id": "chapter",
+      "type": "enum",
+      "label": "Chapter",
+      "default": "architecture",
+      "options": [
+        { "value": "architecture", "label": "Architecture" },
+        { "value": "governance", "label": "Governance" },
+        { "value": "security", "label": "Security" },
+        { "value": "roi", "label": "ROI" }
+      ]
+    }
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>JP Chapter Card</title>
+    <link rel="stylesheet" href="assets/kit.css" />
+    <script src="assets/gsap.min.js"></script>
+    <style>
+      body {
+        background: var(--navy);
+      }
+
+      #jp-chapter-card {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--navy);
+        color: var(--ice);
+      }
+
+      #cc-orbit-a {
+        top: -500px;
+        right: -160px;
+        width: 980px;
+        height: 980px;
+      }
+
+      #cc-orbit-b {
+        left: 680px;
+        bottom: -640px;
+        width: 900px;
+        height: 900px;
+        border-color: rgba(196, 163, 90, 0.18);
+      }
+
+      #cc-number {
+        position: absolute;
+        top: 126px;
+        left: 126px;
+        color: var(--blue);
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0.17em;
+      }
+
+      #cc-copy {
+        position: absolute;
+        top: 360px;
+        left: 126px;
+        width: 1320px;
+      }
+
+      #cc-label {
+        margin-bottom: 30px;
+        color: var(--gold);
+      }
+
+      #cc-title {
+        margin: 0;
+        font-size: 162px;
+        font-weight: 900;
+        letter-spacing: -0.065em;
+        line-height: 0.9;
+        text-transform: uppercase;
+      }
+
+      #cc-rule {
+        position: absolute;
+        bottom: 130px;
+        left: 126px;
+        width: 1160px;
+        height: 4px;
+        background: var(--blue);
+        transform-origin: left;
+      }
+
+      #cc-mark {
+        position: absolute;
+        right: 126px;
+        bottom: 112px;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.13em;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="jp-chapter-card"
+      data-composition-id="jp-chapter-card"
+      data-width="1920"
+      data-height="1080"
+      data-duration="2.5"
+      data-start="0"
+    >
+      <div id="cc-orbit-a" class="orbit" data-layout-allow-overflow></div>
+      <div id="cc-orbit-b" class="orbit" data-layout-allow-overflow></div>
+      <div id="cc-number">01 / 04</div>
+      <div id="cc-copy">
+        <div id="cc-label" class="micro-label">CAPÍTULO</div>
+        <h1 id="cc-title">ARQUITECTURA</h1>
+      </div>
+      <div id="cc-rule"></div>
+      <div id="cc-mark">JP | MÁRQUEZ</div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const { language = "es", chapter = "architecture" } = window.__hyperframes?.getVariables?.() || {};
+      const copy = {
+        es: {
+          label: "CAPÍTULO",
+          architecture: ["01 / 04", "ARQUITECTURA"],
+          governance: ["02 / 04", "GOBERNANZA"],
+          security: ["03 / 04", "SEGURIDAD"],
+          roi: ["04 / 04", "ROI"],
+        },
+        en: {
+          label: "CHAPTER",
+          architecture: ["01 / 04", "ARCHITECTURE"],
+          governance: ["02 / 04", "GOVERNANCE"],
+          security: ["03 / 04", "SECURITY"],
+          roi: ["04 / 04", "ROI"],
+        },
+      }[language];
+      document.documentElement.lang = language;
+      document.querySelector("#cc-label").textContent = copy.label;
+      document.querySelector("#cc-number").textContent = copy[chapter][0];
+      document.querySelector("#cc-title").textContent = copy[chapter][1];
+
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#cc-number", { x: -50, opacity: 0 }, { x: 0, opacity: 1, duration: 0.34, ease: "power3.out" }, 0.12)
+        .fromTo("#cc-label", { x: -70, opacity: 0 }, { x: 0, opacity: 1, duration: 0.38, ease: "power4.out" }, 0.24)
+        .fromTo("#cc-title", { y: 100, opacity: 0 }, { y: 0, opacity: 1, duration: 0.64, ease: "power4.out" }, 0.36)
+        .fromTo("#cc-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.7, ease: "expo.out" }, 0.64)
+        .fromTo("#cc-mark", { x: 60, opacity: 0 }, { x: 0, opacity: 1, duration: 0.38, ease: "power2.out" }, 0.88)
+        .fromTo("#cc-orbit-a", { scale: 0.9, opacity: 0 }, { scale: 1, opacity: 1, duration: 1.4, ease: "sine.out" }, 0.1)
+        .fromTo("#cc-orbit-b", { scale: 1.08, opacity: 0 }, { scale: 1, opacity: 1, duration: 1.5, ease: "sine.out" }, 0.18);
+      tl.seek(0);
+      window.__timelines["jp-chapter-card"] = tl;
+    </script>
+  </body>
+</html>

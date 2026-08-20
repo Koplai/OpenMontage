@@ -1,0 +1,9 @@
+{
+  "duration": 3,
+  "assertions": [
+    { "kind": "appearsBy", "selector": "#mi-jp", "bySec": 0.8 },
+    { "kind": "before", "a": "#mi-jp", "b": "#mi-line-2" },
+    { "kind": "appearsBy", "selector": "#mi-title", "bySec": 1.4 },
+    { "kind": "staysInFrame", "selector": "#mi-copy" }
+  ]
+}

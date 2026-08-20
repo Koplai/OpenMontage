@@ -1,0 +1,136 @@
+<!doctype html>
+<html
+  lang="es"
+  data-composition-variables='[
+    {
+      "id": "language",
+      "type": "enum",
+      "label": "Language",
+      "default": "es",
+      "options": [
+        { "value": "es", "label": "Español" },
+        { "value": "en", "label": "English" }
+      ]
+    }
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>JP Evidence Callout</title>
+    <link rel="stylesheet" href="assets/kit.css" />
+    <script src="assets/gsap.min.js"></script>
+    <style>
+      html,
+      body {
+        background: transparent;
+      }
+
+      #jp-callout {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      #co-card {
+        position: absolute;
+        top: 96px;
+        right: 96px;
+        width: 600px;
+        min-height: 244px;
+        padding: 34px 38px;
+        border: 3px solid var(--blue);
+        border-radius: 28px;
+        background: rgba(243, 249, 255, 0.97);
+        color: var(--navy);
+        box-shadow: 0 20px 56px rgba(0, 0, 0, 0.2);
+      }
+
+      #co-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 22px;
+        color: var(--blue);
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      #co-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--gold);
+      }
+
+      #co-claim {
+        margin: 0;
+        font-size: 34px;
+        font-weight: 900;
+        letter-spacing: -0.025em;
+        line-height: 1.08;
+      }
+
+      #co-source {
+        display: block;
+        margin-top: 22px;
+        color: var(--slate);
+        font-size: 18px;
+        font-weight: 500;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="jp-callout"
+      data-composition-id="jp-callout"
+      data-width="1920"
+      data-height="1080"
+      data-duration="4.5"
+      data-start="0"
+    >
+      <div id="co-card">
+        <div id="co-header">
+          <span id="co-label">EVIDENCIA / 01</span>
+          <span id="co-dot"></span>
+        </div>
+        <p id="co-claim">La arquitectura debe explicar la decisión.</p>
+        <span id="co-source">Fuente: revisión de producción</span>
+      </div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const { language = "es" } = window.__hyperframes?.getVariables?.() || {};
+      const copy = {
+        es: {
+          label: "EVIDENCIA / 01",
+          claim: "La arquitectura debe explicar la decisión.",
+          source: "Fuente: revisión de producción",
+        },
+        en: {
+          label: "EVIDENCE / 01",
+          claim: "Architecture should explain the decision.",
+          source: "Source: production review",
+        },
+      }[language];
+      document.documentElement.lang = language;
+      document.querySelector("#co-label").textContent = copy.label;
+      document.querySelector("#co-claim").textContent = copy.claim;
+      document.querySelector("#co-source").textContent = copy.source;
+
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#co-card", { x: 80, opacity: 0 }, { x: 0, opacity: 1, duration: 0.56, ease: "power4.out" }, 0.18)
+        .fromTo("#co-header", { y: -22, opacity: 0 }, { y: 0, opacity: 1, duration: 0.34, ease: "power3.out" }, 0.4)
+        .fromTo("#co-claim", { y: 34, opacity: 0 }, { y: 0, opacity: 1, duration: 0.44, ease: "power3.out" }, 0.5)
+        .fromTo("#co-source", { x: 30, opacity: 0 }, { x: 0, opacity: 1, duration: 0.34, ease: "power2.out" }, 0.74)
+        .to("#co-dot", { scale: 1.35, duration: 0.24, yoyo: true, repeat: 1, ease: "sine.inOut" }, 1.18)
+        .to("#co-card", { x: 80, opacity: 0, duration: 0.46, ease: "power3.in" }, 3.9);
+      tl.seek(0);
+      window.__timelines["jp-callout"] = tl;
+    </script>
+  </body>
+</html>

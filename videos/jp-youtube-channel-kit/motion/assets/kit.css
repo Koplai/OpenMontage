@@ -1,0 +1,80 @@
+@font-face {
+  font-family: "Satoshi";
+  src: url("./satoshi-500.woff2") format("woff2");
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("./satoshi-700.woff2") format("woff2");
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("./satoshi-900.woff2") format("woff2");
+  font-weight: 900;
+}
+
+:root {
+  --navy: #0a1628;
+  --ink: #131e2e;
+  --blue: #4a90e2;
+  --gold: #c4a35a;
+  --slate: #47607d;
+  --ice: #f3f9ff;
+  --proof: #eaf2fc;
+  --white: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 1920px;
+  height: 1080px;
+  margin: 0;
+  overflow: hidden;
+  font-family: "Satoshi", Arial, sans-serif;
+}
+
+.stage {
+  position: relative;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+}
+
+.clip {
+  position: absolute;
+  inset: 0;
+}
+
+.micro-label {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.micro-label::before {
+  width: 46px;
+  height: 4px;
+  background: currentColor;
+  content: "";
+}
+
+.orbit {
+  position: absolute;
+  border: 2px solid rgba(74, 144, 226, 0.24);
+  border-radius: 50%;
+}
+
+.accent {
+  color: var(--blue);
+}

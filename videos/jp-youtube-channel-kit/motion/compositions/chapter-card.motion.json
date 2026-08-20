@@ -1,0 +1,8 @@
+{
+  "duration": 2.5,
+  "assertions": [
+    { "kind": "appearsBy", "selector": "#cc-title", "bySec": 1.2 },
+    { "kind": "before", "a": "#cc-label", "b": "#cc-title" },
+    { "kind": "staysInFrame", "selector": "#cc-copy" }
+  ]
+}

@@ -1,0 +1,246 @@
+<!doctype html>
+<html
+  lang="es"
+  data-composition-variables='[
+    {
+      "id": "language",
+      "type": "enum",
+      "label": "Language",
+      "default": "es",
+      "options": [
+        { "value": "es", "label": "Español" },
+        { "value": "en", "label": "English" }
+      ]
+    }
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>JP YouTube End Screen</title>
+    <link rel="stylesheet" href="assets/kit.css" />
+    <script src="assets/gsap.min.js"></script>
+    <style>
+      body {
+        background: var(--ice);
+      }
+
+      #jp-end-screen {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--ice);
+        color: var(--navy);
+      }
+
+      #es-orbit {
+        top: -560px;
+        left: -420px;
+        width: 1100px;
+        height: 1100px;
+        border-color: rgba(74, 144, 226, 0.18);
+      }
+
+      #es-copy {
+        position: absolute;
+        top: 150px;
+        left: 126px;
+        width: 600px;
+      }
+
+      #es-copy .micro-label {
+        margin-bottom: 34px;
+        color: #3c74b7;
+      }
+
+      #es-title {
+        margin: 0;
+        font-size: 100px;
+        font-weight: 900;
+        letter-spacing: -0.055em;
+        line-height: 0.94;
+      }
+
+      #es-subtitle {
+        max-width: 560px;
+        margin: 38px 0 0;
+        color: var(--slate);
+        font-size: 30px;
+        font-weight: 500;
+        line-height: 1.35;
+      }
+
+      #es-rule {
+        position: absolute;
+        bottom: 108px;
+        left: 126px;
+        width: 600px;
+        height: 3px;
+        background: var(--blue);
+        transform-origin: left;
+      }
+
+      #es-grid {
+        position: absolute;
+        top: 128px;
+        right: 126px;
+        display: grid;
+        width: 920px;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+      }
+
+      .video-slot {
+        position: relative;
+        height: 520px;
+        overflow: hidden;
+        border: 3px solid var(--blue);
+        border-radius: 30px;
+        background: var(--navy);
+        color: var(--ice);
+      }
+
+      .video-slot::after {
+        position: absolute;
+        inset: 20px;
+        border: 1px solid rgba(74, 144, 226, 0.34);
+        border-radius: 20px;
+        content: "";
+      }
+
+      .slot-code {
+        position: absolute;
+        top: 42px;
+        left: 42px;
+        color: #5b9ae5;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+      }
+
+      .slot-label {
+        position: absolute;
+        right: 42px;
+        bottom: 42px;
+        left: 42px;
+        font-size: 34px;
+        font-weight: 700;
+        line-height: 1.05;
+      }
+
+      #es-subscribe {
+        position: absolute;
+        right: 126px;
+        bottom: 94px;
+        display: flex;
+        align-items: center;
+        gap: 22px;
+      }
+
+      #es-subscribe-mark {
+        display: grid;
+        width: 126px;
+        height: 126px;
+        border: 3px solid var(--blue);
+        border-radius: 50%;
+        background: var(--white);
+        place-items: center;
+        font-size: 42px;
+        font-weight: 900;
+      }
+
+      #es-subscribe-copy {
+        width: 300px;
+      }
+
+      #es-subscribe-copy strong {
+        display: block;
+        font-size: 31px;
+      }
+
+      #es-subscribe-copy span {
+        display: block;
+        margin-top: 6px;
+        color: var(--slate);
+        font-size: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="jp-end-screen"
+      data-composition-id="jp-end-screen"
+      data-width="1920"
+      data-height="1080"
+      data-duration="20"
+      data-start="0"
+    >
+      <div id="es-orbit" class="orbit" data-layout-allow-overflow></div>
+      <div id="es-copy">
+        <div class="micro-label">JP / NEXT</div>
+        <h1 id="es-title">Continúa explorando.</h1>
+        <p id="es-subtitle">Arquitectura, gobernanza y decisiones de IA explicadas con claridad.</p>
+      </div>
+      <div id="es-rule"></div>
+      <div id="es-grid">
+        <div id="es-slot-a" class="video-slot">
+          <span class="slot-code">01 / NEXT</span>
+          <strong id="es-slot-a-label" class="slot-label">Siguiente vídeo</strong>
+        </div>
+        <div id="es-slot-b" class="video-slot">
+          <span class="slot-code">02 / PROOF</span>
+          <strong id="es-slot-b-label" class="slot-label">Recomendado</strong>
+        </div>
+      </div>
+      <div id="es-subscribe">
+        <div id="es-subscribe-mark">JP</div>
+        <div id="es-subscribe-copy">
+          <strong id="es-subscribe-title">Suscríbete</strong>
+          <span id="es-subscribe-note">IA práctica, sin humo.</span>
+        </div>
+      </div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const { language = "es" } = window.__hyperframes?.getVariables?.() || {};
+      const copy = {
+        es: {
+          title: "Continúa explorando.",
+          subtitle: "Arquitectura, gobernanza y decisiones de IA explicadas con claridad.",
+          next: "Siguiente vídeo",
+          recommended: "Recomendado",
+          subscribe: "Suscríbete",
+          note: "IA práctica, sin humo.",
+        },
+        en: {
+          title: "Keep exploring.",
+          subtitle: "Architecture, governance and AI decisions explained with clarity.",
+          next: "Watch next",
+          recommended: "Recommended",
+          subscribe: "Subscribe",
+          note: "Practical AI, without hype.",
+        },
+      }[language];
+      document.documentElement.lang = language;
+      document.querySelector("#es-title").textContent = copy.title;
+      document.querySelector("#es-subtitle").textContent = copy.subtitle;
+      document.querySelector("#es-slot-a-label").textContent = copy.next;
+      document.querySelector("#es-slot-b-label").textContent = copy.recommended;
+      document.querySelector("#es-subscribe-title").textContent = copy.subscribe;
+      document.querySelector("#es-subscribe-note").textContent = copy.note;
+
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#es-copy", { x: -90, opacity: 0 }, { x: 0, opacity: 1, duration: 0.65, ease: "power4.out" }, 0.2)
+        .fromTo("#es-slot-a", { y: 70, opacity: 0 }, { y: 0, opacity: 1, duration: 0.58, ease: "power3.out" }, 0.48)
+        .fromTo("#es-slot-b", { y: 70, opacity: 0 }, { y: 0, opacity: 1, duration: 0.58, ease: "power3.out" }, 0.66)
+        .fromTo("#es-subscribe", { x: 70, opacity: 0 }, { x: 0, opacity: 1, duration: 0.52, ease: "circ.out" }, 0.9)
+        .fromTo("#es-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.7, ease: "power3.out" }, 1.1)
+        .fromTo("#es-orbit", { scale: 0.92, opacity: 0 }, { scale: 1, opacity: 1, duration: 2.1, ease: "sine.out" }, 0.1)
+        .to("#es-slot-a", { y: -8, duration: 3.6, repeat: 3, yoyo: true, ease: "sine.inOut" }, 2.0)
+        .to("#es-slot-b", { y: 8, duration: 3.9, repeat: 3, yoyo: true, ease: "sine.inOut" }, 2.2);
+      tl.seek(0);
+      window.__timelines["jp-end-screen"] = tl;
+    </script>
+  </body>
+</html>

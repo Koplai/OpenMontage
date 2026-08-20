@@ -1,0 +1,7 @@
+{
+  "duration": 6,
+  "assertions": [
+    { "kind": "appearsBy", "selector": "#lt-shell", "bySec": 1.2 },
+    { "kind": "before", "a": "#lt-name", "b": "#lt-role" }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "duration": 4.5,
+  "assertions": [
+    { "kind": "appearsBy", "selector": "#co-card", "bySec": 1 },
+    { "kind": "before", "a": "#co-claim", "b": "#co-source" }
+  ]
+}

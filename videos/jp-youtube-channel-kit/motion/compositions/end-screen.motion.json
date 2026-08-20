@@ -1,0 +1,9 @@
+{
+  "duration": 20,
+  "assertions": [
+    { "kind": "appearsBy", "selector": "#es-title", "bySec": 1 },
+    { "kind": "before", "a": "#es-title", "b": "#es-subscribe" },
+    { "kind": "staysInFrame", "selector": "#es-grid" },
+    { "kind": "keepsMoving", "withinSelector": "#jp-end-screen", "maxStaticSec": 4.5 }
+  ]
+}

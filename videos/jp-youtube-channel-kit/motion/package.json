@@ -1,0 +1,10 @@
+{
+  "name": "jp-youtube-channel-kit-motion",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "bash scripts/check-all.sh",
+    "render": "bash scripts/render-all.sh",
+    "preview": "npx --yes hyperframes@0.8.4 preview"
+  }
+}
