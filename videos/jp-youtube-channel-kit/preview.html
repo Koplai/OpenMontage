@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JP YouTube Channel Kit</title>
+    <style>
+      @font-face {
+        font-family: "Satoshi";
+        src: url("./assets/satoshi-500.woff2") format("woff2");
+        font-weight: 500;
+      }
+
+      @font-face {
+        font-family: "Satoshi";
+        src: url("./assets/satoshi-900.woff2") format("woff2");
+        font-weight: 900;
+      }
+
+      :root {
+        color-scheme: dark;
+        --navy: #0a1628;
+        --blue: #4a90e2;
+        --gold: #c4a35a;
+        --ice: #f3f9ff;
+        --slate: #9eb1c8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--navy);
+        color: var(--ice);
+        font-family: "Satoshi", sans-serif;
+      }
+
+      header,
+      main {
+        width: min(1480px, calc(100% - 48px));
+        margin: 0 auto;
+      }
+
+      header {
+        padding: 76px 0 50px;
+        border-bottom: 1px solid rgba(74, 144, 226, 0.3);
+      }
+
+      .eyebrow {
+        color: var(--gold);
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 900px;
+        margin: 18px 0 20px;
+        font-size: clamp(48px, 7vw, 102px);
+        font-weight: 900;
+        letter-spacing: -0.06em;
+        line-height: 0.92;
+      }
+
+      header p {
+        max-width: 760px;
+        margin: 0;
+        color: var(--slate);
+        font-size: 21px;
+        line-height: 1.5;
+      }
+
+      section {
+        padding: 58px 0 12px;
+      }
+
+      h2 {
+        margin: 0 0 24px;
+        font-size: 32px;
+        letter-spacing: -0.03em;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 22px;
+      }
+
+      article {
+        overflow: hidden;
+        border: 1px solid rgba(74, 144, 226, 0.28);
+        border-radius: 20px;
+        background: #101e32;
+      }
+
+      article span {
+        display: block;
+        padding: 14px 18px;
+        color: var(--slate);
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      video,
+      img {
+        display: block;
+        width: 100%;
+        background: #000;
+      }
+
+      .alpha video {
+        background-color: #dce8f5;
+        background-image:
+          linear-gradient(45deg, #c7d5e5 25%, transparent 25%),
+          linear-gradient(-45deg, #c7d5e5 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, #c7d5e5 75%),
+          linear-gradient(-45deg, transparent 75%, #c7d5e5 75%);
+        background-position:
+          0 0,
+          0 16px,
+          16px -16px,
+          -16px 0;
+        background-size: 32px 32px;
+      }
+
+      .static-sheet {
+        border: 1px solid rgba(74, 144, 226, 0.28);
+        border-radius: 20px;
+      }
+
+      footer {
+        width: min(1480px, calc(100% - 48px));
+        margin: 70px auto 0;
+        padding: 30px 0 60px;
+        border-top: 1px solid rgba(74, 144, 226, 0.3);
+        color: var(--slate);
+      }
+
+      @media (max-width: 800px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="eyebrow">JP / AI IN PRODUCTION</div>
+      <h1>Canal bilingüe. Un solo sistema.</h1>
+      <p>
+        Galería reproducible de la identidad de Juan Pedro Márquez para contenido
+        técnico de arquitectura, gobernanza, seguridad y ROI.
+      </p>
+    </header>
+
+    <main>
+      <section>
+        <h2>Micro-intro</h2>
+        <div class="grid">
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-micro-intro-es.mp4"></video>
+            <span>Español · 3 segundos</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-micro-intro-en.mp4"></video>
+            <span>English · 3 seconds</span>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>End screen</h2>
+        <div class="grid">
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-end-screen-es.mp4"></video>
+            <span>Español · 20 segundos</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-end-screen-en.mp4"></video>
+            <span>English · 20 seconds</span>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>Overlays con transparencia</h2>
+        <div class="grid alpha">
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-lower-third-es.webm"></video>
+            <span>Lower third · ES</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-lower-third-en.webm"></video>
+            <span>Lower third · EN</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-evidence-callout-es.webm"></video>
+            <span>Evidencia · ES</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-evidence-callout-en.webm"></video>
+            <span>Evidence · EN</span>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>Separadores de capítulo</h2>
+        <div class="grid">
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-chapter-architecture-es.mp4"></video>
+            <span>Arquitectura · ES</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-chapter-architecture-en.mp4"></video>
+            <span>Architecture · EN</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-chapter-governance-es.mp4"></video>
+            <span>Gobernanza · ES</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-chapter-governance-en.mp4"></video>
+            <span>Governance · EN</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-chapter-security-es.mp4"></video>
+            <span>Seguridad · ES</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-chapter-security-en.mp4"></video>
+            <span>Security · EN</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-chapter-roi-es.mp4"></video>
+            <span>ROI · ES</span>
+          </article>
+          <article>
+            <video controls preload="metadata" src="./motion/renders/jp-chapter-roi-en.mp4"></video>
+            <span>ROI · EN</span>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>Sistema estático completo</h2>
+        <img
+          class="static-sheet"
+          src="./static/contact-sheet.png"
+          alt="Hoja de contacto del sistema visual estático"
+        />
+      </section>
+    </main>
+
+    <footer>Claro. Directo. Con rigor. · Calm. Direct. Defensible.</footer>
+  </body>
+</html>
