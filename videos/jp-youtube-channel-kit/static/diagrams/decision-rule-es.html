@@ -1,0 +1,56 @@
+<!doctype html>
+        <html lang="en" class="">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>diagram Regla de decisión</title>
+            <link rel="stylesheet" href="../brand.css" />
+            <style>
+
+.diagram-page { background: linear-gradient(145deg, #0A1628 0%, #131E2E 100%); }
+.diagram-copy { position: absolute; left: 88px; top: 88px; width: 820px; }
+.diagram-copy h1 { margin: 26px 0 0; font-size: 94px; line-height: 0.96; font-weight: 900; letter-spacing: -0.05em; }
+.diagram-copy p { margin: 18px 0 0; width: 760px; font-size: 32px; line-height: 1.18; color: rgba(243,249,255,0.84); }
+.diagram-card {
+  position: absolute; left: 88px; right: 88px; bottom: 82px; top: 312px;
+  border-radius: 36px; background: rgba(19,30,46,0.72); border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.diagram-card svg { width: 100%; height: 100%; }
+
+            </style>
+          </head>
+          <body class="">
+
+        <main class="page bg-grid grain diagram-page">
+          <div class="diagram-copy">
+            <div class="eyebrow"><span class="dot"></span>Serie técnica</div>
+            <h1 data-check="title">Regla de decisión</h1>
+            <p data-check="subtitle">Escalar solo cuando evidencia, riesgo y control pasan el umbral acordado.</p>
+          </div>
+          <div class="diagram-card">
+<svg viewBox='0 0 980 660' aria-hidden='true'>
+  <defs>
+    <marker id='arrow-dec' markerWidth='12' markerHeight='12' refX='10' refY='4' orient='auto' markerUnits='strokeWidth'>
+      <path d='M0,0 L10,4 L0,8 Z' fill='#4A90E2'/>
+    </marker>
+  </defs>
+  <rect x='18' y='18' width='944' height='624' rx='34' fill='#FFFFFF' stroke='#D6E3F4'/>
+  <rect x='390' y='70' width='200' height='86' rx='24' fill='#0A1628'/><text x='490' y='122' text-anchor='middle' font-size='28' font-weight='700' fill='#FFF'>Caso de uso</text>
+  <polygon points='490,200 620,290 490,380 360,290' fill='#4A90E2'/><text x='490' y='300' text-anchor='middle' font-size='26' font-weight='700' fill='#FFF'>¿Riesgo aceptable?</text>
+  <polygon points='760,200 900,290 760,380 620,290' fill='#131E2E'/><text x='760' y='300' text-anchor='middle' font-size='26' font-weight='700' fill='#FFF'>¿Control listo?</text>
+  <rect x='390' y='466' width='200' height='84' rx='24' fill='#47607D'/><text x='490' y='517' text-anchor='middle' font-size='28' font-weight='700' fill='#FFF'>Piloto</text>
+  <rect x='720' y='466' width='180' height='84' rx='24' fill='#C4A35A'/><text x='810' y='517' text-anchor='middle' font-size='28' font-weight='700' fill='#0A1628'>Escalar</text>
+  <line x1='490' y1='156' x2='490' y2='200' stroke='#4A90E2' stroke-width='6' marker-end='url(#arrow-dec)'/>
+  <line x1='620' y1='290' x2='760' y2='290' stroke='#4A90E2' stroke-width='6' marker-end='url(#arrow-dec)'/>
+  <line x1='490' y1='380' x2='490' y2='466' stroke='#4A90E2' stroke-width='6' marker-end='url(#arrow-dec)'/>
+  <line x1='760' y1='380' x2='760' y2='466' stroke='#4A90E2' stroke-width='6' marker-end='url(#arrow-dec)'/>
+  <text x='545' y='258' font-size='22' font-weight='700' fill='#47607D'>Sí</text>
+  <text x='410' y='430' font-size='22' font-weight='700' fill='#47607D'>No</text>
+  <text x='815' y='430' font-size='22' font-weight='700' fill='#47607D'>Sí</text>
+</svg>
+</div>
+        </main>
+
+          </body>
+        </html>

@@ -1,0 +1,62 @@
+<!doctype html>
+        <html lang="en" class="">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>thumbnail decision es</title>
+            <link rel="stylesheet" href="../brand.css" />
+            <style>
+
+.decision-thumb {
+  background:
+    linear-gradient(90deg, #0A1628 0%, #0A1628 65%, #F3F9FF 65%, #F3F9FF 100%);
+}
+.decision-thumb::before {
+  content: ''; position: absolute; inset: 0;
+  background-image: linear-gradient(to right, rgba(74,144,226,0.08) 1px, transparent 1px);
+  background-size: 88px 88px; opacity: 0.6; pointer-events: none;
+}
+.left-col { position: absolute; left: 88px; top: 92px; width: 650px; z-index: 2; }
+.title-box { margin-top: 22px; width: 560px; min-height: 250px; }
+h1 { margin: 0; font-size: 90px; line-height: 0.94; font-weight: 900; letter-spacing: -0.045em; color: var(--white); }
+.subtitle { margin: 18px 0 0; color: rgba(243,249,255,0.88); font-size: 30px; }
+.decision-panel {
+  position: absolute; right: 82px; top: 92px; width: 372px; padding: 30px 30px 26px;
+  border-radius: 30px; background: #FFFFFF; color: #131E2E; box-shadow: 0 18px 44px rgba(10,22,40,0.16);
+  border: 1px solid rgba(19,30,46,0.08);
+}
+.panel-header { font-size: 22px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: #47607D; }
+.panel-row {
+  display: flex; justify-content: space-between; align-items: center; margin-top: 18px;
+  padding: 16px 0; border-bottom: 1px solid rgba(19,30,46,0.08); font-size: 21px;
+}
+.panel-row strong { font-size: 21px; font-weight: 900; }
+.confidence { margin-top: 28px; }
+.confidence-bar { width: 100%; height: 16px; border-radius: 999px; overflow: hidden; background: rgba(74,144,226,0.12); }
+.confidence-bar span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #4A90E2, #C4A35A); }
+.confidence-label { margin-top: 14px; font-size: 30px; font-weight: 900; color: #0A1628; letter-spacing: -0.02em; }
+
+            </style>
+          </head>
+          <body class="">
+
+<main class="page grain decision-thumb">
+  <div class="left-col">
+    <div class="eyebrow"><span class="dot"></span>Decisión</div>
+    <div class="fit-box title-box"><h1 class="fit-text" data-check="title">Gobernanza que funciona</h1></div>
+    <p class="subtitle">Listo para producción</p>
+  </div>
+  <div class="decision-panel">
+    <div class="panel-header">Decisión</div>
+    <div class="panel-row"><span>Evidencia</span><strong class="mono">84 / 100</strong></div>
+    <div class="panel-row"><span>Riesgo</span><strong class="mono">Bajo · Low</strong></div>
+    <div class="panel-row"><span>Control</span><strong class="mono">7 / 8</strong></div>
+    <div class="confidence">
+      <div class="confidence-bar"><span style="width:82%"></span></div>
+      <div class="confidence-label">GO · APPROVED</div>
+    </div>
+  </div>
+</main>
+
+          </body>
+        </html>

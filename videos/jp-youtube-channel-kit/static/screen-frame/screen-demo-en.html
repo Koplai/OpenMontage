@@ -1,0 +1,56 @@
+<!doctype html>
+        <html lang="en" class="transparent">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>screen frame en</title>
+            <link rel="stylesheet" href="../brand.css" />
+            <style>
+
+.screen-frame-page { background: transparent; }
+.top-rail {
+  position: absolute; left: 96px; right: 96px; top: 62px; height: 94px;
+  border-radius: 24px; padding: 20px 26px; display: flex; justify-content: space-between; align-items: center;
+}
+.rail-title { font-size: 34px; font-weight: 900; letter-spacing: -0.03em; color: var(--white); }
+.rail-sub { margin-top: 4px; font-size: 20px; color: rgba(243,249,255,0.82); }
+.capture-window {
+  position: absolute; left: 160px; top: 90px; width: 1600px; height: 900px;
+  border: 2px solid rgba(74,144,226,0.6); border-radius: 26px;
+}
+.capture-window::before {
+  content: ''; position: absolute; inset: 14px; border-radius: 18px; border: 1px dashed rgba(243,249,255,0.18);
+}
+.corner { position: absolute; width: 48px; height: 48px; border-color: #C4A35A; border-style: solid; }
+.tl { left: -2px; top: -2px; border-width: 4px 0 0 4px; border-top-left-radius: 24px; }
+.tr { right: -2px; top: -2px; border-width: 4px 4px 0 0; border-top-right-radius: 24px; }
+.bl { left: -2px; bottom: -2px; border-width: 0 0 4px 4px; border-bottom-left-radius: 24px; }
+.br { right: -2px; bottom: -2px; border-width: 0 4px 4px 0; border-bottom-right-radius: 24px; }
+.bottom-rail {
+  position: absolute; left: 96px; right: 96px; bottom: 44px; min-height: 76px;
+  border-radius: 22px; padding: 22px 26px; font-size: 22px; color: rgba(243,249,255,0.84);
+}
+
+            </style>
+          </head>
+          <body class="transparent">
+
+<main class="page screen-frame-page">
+  <div class="top-rail callout-box">
+    <div class="left-stack">
+      <div class="rail-title">Live technical demo</div>
+      <div class="rail-sub">Guided session</div>
+    </div>
+    <div class="badge mono">Tenant · Workflow · Evidence</div>
+  </div>
+  <div class="capture-window">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+  </div>
+  <div class="bottom-rail callout-box">Primary 16:9 capture area · Keep titles and cursor movements inside frame</div>
+</main>
+
+          </body>
+        </html>

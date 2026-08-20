@@ -1,0 +1,229 @@
+{
+  "assets": [
+    {
+      "html": "thumbnails/presenter-es.html",
+      "png": "thumbnails/presenter-es.png",
+      "width": 1280,
+      "height": 720,
+      "transparent": false
+    },
+    {
+      "html": "thumbnails/presenter-en.html",
+      "png": "thumbnails/presenter-en.png",
+      "width": 1280,
+      "height": 720,
+      "transparent": false
+    },
+    {
+      "html": "thumbnails/architecture-es.html",
+      "png": "thumbnails/architecture-es.png",
+      "width": 1280,
+      "height": 720,
+      "transparent": false
+    },
+    {
+      "html": "thumbnails/architecture-en.html",
+      "png": "thumbnails/architecture-en.png",
+      "width": 1280,
+      "height": 720,
+      "transparent": false
+    },
+    {
+      "html": "thumbnails/decision-es.html",
+      "png": "thumbnails/decision-es.png",
+      "width": 1280,
+      "height": 720,
+      "transparent": false
+    },
+    {
+      "html": "thumbnails/decision-en.html",
+      "png": "thumbnails/decision-en.png",
+      "width": 1280,
+      "height": 720,
+      "transparent": false
+    },
+    {
+      "html": "banner/channel-banner-es.html",
+      "png": "banner/channel-banner-es.png",
+      "width": 2560,
+      "height": 1440,
+      "transparent": false
+    },
+    {
+      "html": "banner/channel-banner-en.html",
+      "png": "banner/channel-banner-en.png",
+      "width": 2560,
+      "height": 1440,
+      "transparent": false
+    },
+    {
+      "html": "avatar/avatar-monogram.html",
+      "png": "avatar/avatar-monogram.png",
+      "width": 800,
+      "height": 800,
+      "transparent": false
+    },
+    {
+      "html": "overlays/lower-third-es.html",
+      "png": "overlays/lower-third-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": true
+    },
+    {
+      "html": "overlays/evidence-callout-es.html",
+      "png": "overlays/evidence-callout-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": true
+    },
+    {
+      "html": "overlays/lower-third-en.html",
+      "png": "overlays/lower-third-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": true
+    },
+    {
+      "html": "overlays/evidence-callout-en.html",
+      "png": "overlays/evidence-callout-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": true
+    },
+    {
+      "html": "chapters/architecture-es.html",
+      "png": "chapters/architecture-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "chapters/architecture-en.html",
+      "png": "chapters/architecture-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "chapters/governance-es.html",
+      "png": "chapters/governance-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "chapters/governance-en.html",
+      "png": "chapters/governance-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "chapters/security-es.html",
+      "png": "chapters/security-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "chapters/security-en.html",
+      "png": "chapters/security-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "chapters/roi-es.html",
+      "png": "chapters/roi-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "chapters/roi-en.html",
+      "png": "chapters/roi-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "diagrams/reference-architecture-es.html",
+      "png": "diagrams/reference-architecture-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "diagrams/reference-architecture-en.html",
+      "png": "diagrams/reference-architecture-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "diagrams/governance-controls-es.html",
+      "png": "diagrams/governance-controls-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "diagrams/governance-controls-en.html",
+      "png": "diagrams/governance-controls-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "diagrams/roi-evidence-es.html",
+      "png": "diagrams/roi-evidence-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "diagrams/roi-evidence-en.html",
+      "png": "diagrams/roi-evidence-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "diagrams/decision-rule-es.html",
+      "png": "diagrams/decision-rule-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "diagrams/decision-rule-en.html",
+      "png": "diagrams/decision-rule-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": false
+    },
+    {
+      "html": "screen-frame/screen-demo-es.html",
+      "png": "screen-frame/screen-demo-es.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": true
+    },
+    {
+      "html": "screen-frame/screen-demo-en.html",
+      "png": "screen-frame/screen-demo-en.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": true
+    },
+    {
+      "html": "contact-sheet.html",
+      "png": "contact-sheet.png",
+      "width": 2560,
+      "height": 4800,
+      "transparent": false
+    }
+  ],
+  "issues": []
+}

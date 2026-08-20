@@ -1,0 +1,112 @@
+<!doctype html>
+        <html lang="en" class="">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>contact sheet</title>
+            <link rel="stylesheet" href="../brand.css" />
+            <style>
+
+.contact-page { background: #F3F9FF; color: #131E2E; overflow: visible; min-height: 100vh; }
+.header { padding: 62px 76px 18px; color: #131E2E; }
+.header h1 { margin: 22px 0 0; font-size: 84px; line-height: 0.95; font-weight: 900; letter-spacing: -0.05em; }
+.header p { margin: 20px 0 0; width: 1600px; font-size: 28px; line-height: 1.2; color: #47607D; }
+.header .eyebrow { color: #131E2E; background: rgba(74,144,226,0.08); border-color: rgba(74,144,226,0.14); }
+.grid {
+  padding: 24px 76px 84px; display: grid; grid-template-columns: 1.35fr 1fr; gap: 26px;
+}
+.card {
+  background: #FFFFFF; border: 1px solid rgba(19,30,46,0.08); border-radius: 28px; box-shadow: 0 16px 40px rgba(10,22,40,0.08);
+  padding: 22px 22px 24px; overflow: hidden;
+}
+.wide { grid-column: span 2; }
+.narrow { grid-column: span 1; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; gap: 20px; }
+.card-head h2 { margin: 0; font-size: 30px; font-weight: 900; letter-spacing: -0.03em; }
+.card-head span { font-size: 16px; color: #47607D; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+.thumb-row { display: grid; gap: 16px; }
+.three-up { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.four-up { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.thumb-row img, .banner-wrap img, .avatar-card img { width: 100%; display: block; border-radius: 20px; border: 1px solid rgba(19,30,46,0.08); }
+.banner-wrap img { border-radius: 26px; }
+.avatar-card { display: flex; flex-direction: column; }
+.avatar-card img { width: 320px; align-self: center; }
+.overlay-preview { height: 360px; }
+.checker, .screen-stage { position: relative; border-radius: 22px; overflow: hidden; height: 100%; }
+.checker {
+  background-image: linear-gradient(45deg, rgba(71,96,125,0.12) 25%, transparent 25%), linear-gradient(-45deg, rgba(71,96,125,0.12) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(71,96,125,0.12) 75%), linear-gradient(-45deg, transparent 75%, rgba(71,96,125,0.12) 75%);
+  background-size: 28px 28px; background-position: 0 0, 0 14px, 14px -14px, -14px 0px; background-color: #F6FAFF;
+}
+.preview-stage { position: relative; }
+.preview-stage img.lt { position: absolute; inset: auto auto 20px 18px; width: calc(100% - 36px); }
+.preview-stage img.co { position: absolute; top: 18px; right: 18px; width: 45%; }
+.screen-stage { height: 360px; display: grid; place-items: center; background: #EEF5FC; }
+.mock-screen { position: absolute; inset: 22px; border-radius: 22px; background: linear-gradient(145deg, #0A1628, #131E2E); }
+.screen-stage img { position: relative; width: 100%; height: 100%; object-fit: contain; }
+
+            </style>
+          </head>
+          <body class="">
+
+<main class="page contact-page">
+  <header class="header">
+    <div class="eyebrow"><span class="dot"></span>Static system review</div>
+    <h1>JP YouTube Channel Kit</h1>
+    <p>Premium bilingual static identity — thumbnails, banner, avatar, overlays, chapters, diagrams and screen demo framing.</p>
+  </header>
+  <section class="grid">
+    <article class="card wide">
+      <div class="card-head"><h2>Thumbnails</h2><span>3 systems · ES / EN</span></div>
+      <div class="thumb-row three-up">
+        <img src="thumbnails/presenter-es.png" alt="Presenter thumbnail" />
+        <img src="thumbnails/architecture-en.png" alt="Architecture thumbnail" />
+        <img src="thumbnails/decision-es.png" alt="Decision thumbnail" />
+      </div>
+    </article>
+    <article class="card wide">
+      <div class="card-head"><h2>Banner</h2><span>Safe zone centred</span></div>
+      <div class="banner-wrap"><img src="banner/channel-banner-en.png" alt="Channel banner" /></div>
+    </article>
+    <article class="card narrow avatar-card">
+      <div class="card-head"><h2>Avatar</h2><span>Monogram</span></div>
+      <img src="avatar/avatar-monogram.png" alt="Avatar" />
+    </article>
+    <article class="card wide overlay-card">
+      <div class="card-head"><h2>Overlays</h2><span>Transparent lower-third + callout</span></div>
+      <div class="overlay-preview">
+        <div class="preview-stage checker">
+          <img class="lt" src="overlays/lower-third-en.png" alt="Lower third" />
+          <img class="co" src="overlays/evidence-callout-en.png" alt="Evidence callout" />
+        </div>
+      </div>
+    </article>
+    <article class="card wide">
+      <div class="card-head"><h2>Chapter cards</h2><span>4 topics · ES / EN</span></div>
+      <div class="thumb-row four-up">
+        <img src="chapters/architecture-en.png" alt="Architecture chapter" />
+        <img src="chapters/governance-en.png" alt="Governance chapter" />
+        <img src="chapters/security-en.png" alt="Security chapter" />
+        <img src="chapters/roi-en.png" alt="ROI chapter" />
+      </div>
+    </article>
+    <article class="card wide">
+      <div class="card-head"><h2>Technical diagrams</h2><span>Reference architecture, controls, ROI, decision rule</span></div>
+      <div class="thumb-row four-up">
+        <img src="diagrams/reference-architecture-en.png" alt="Reference architecture" />
+        <img src="diagrams/governance-controls-en.png" alt="Governance controls" />
+        <img src="diagrams/roi-evidence-en.png" alt="ROI evidence" />
+        <img src="diagrams/decision-rule-en.png" alt="Decision rule" />
+      </div>
+    </article>
+    <article class="card wide">
+      <div class="card-head"><h2>Screen demo frame</h2><span>Transparent overlay</span></div>
+      <div class="screen-stage checker">
+        <div class="mock-screen"></div>
+        <img src="screen-frame/screen-demo-en.png" alt="Screen frame" />
+      </div>
+    </article>
+  </section>
+</main>
+
+          </body>
+        </html>

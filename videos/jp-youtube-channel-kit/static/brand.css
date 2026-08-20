@@ -1,0 +1,137 @@
+@font-face {
+  font-family: 'Satoshi';
+  src: url('../assets/satoshi-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Satoshi';
+  src: url('../assets/satoshi-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Satoshi';
+  src: url('../assets/satoshi-900.woff2') format('woff2');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --navy: #0A1628;
+  --azure: #4A90E2;
+  --gold: #C4A35A;
+  --ice: #F3F9FF;
+  --white: #FFFFFF;
+  --slate: #47607D;
+  --ink: #131E2E;
+  --line: rgba(74, 144, 226, 0.22);
+  --line-strong: rgba(74, 144, 226, 0.4);
+  --shadow: 0 18px 44px rgba(10, 22, 40, 0.18);
+  --radius-xl: 34px;
+  --radius-lg: 24px;
+  --radius-md: 16px;
+  --radius-sm: 12px;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Satoshi', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--white);
+  background: var(--navy);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+html.transparent, body.transparent {
+  background: transparent;
+}
+.page {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+}
+.bg-grid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(74, 144, 226, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(74, 144, 226, 0.08) 1px, transparent 1px);
+  background-size: 72px 72px;
+  opacity: 0.6;
+  pointer-events: none;
+}
+.grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(255,255,255,0.06) 0, transparent 28%),
+    radial-gradient(circle at 85% 15%, rgba(74,144,226,0.09) 0, transparent 28%),
+    radial-gradient(circle at 75% 80%, rgba(196,163,90,0.08) 0, transparent 30%);
+  pointer-events: none;
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(19, 30, 46, 0.72);
+  color: var(--ice);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.eyebrow .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 4px rgba(196, 163, 90, 0.16);
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(243,249,255,0.1);
+  color: var(--ice);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.mono {
+  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+.fit-box {
+  position: relative;
+  overflow: hidden;
+}
+.fit-text {
+  position: relative;
+  overflow: hidden;
+  text-wrap: balance;
+}
+.callout-box {
+  background: rgba(10, 22, 40, 0.88);
+  border: 1px solid rgba(74, 144, 226, 0.24);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(0px);
+}
+.rule { height: 1px; background: rgba(255,255,255,0.14); width: 100%; }
+svg text { font-family: 'Satoshi', sans-serif; }

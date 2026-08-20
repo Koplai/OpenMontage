@@ -1,0 +1,43 @@
+<!doctype html>
+        <html lang="en" class="transparent">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>lower third es</title>
+            <link rel="stylesheet" href="../brand.css" />
+            <style>
+
+.lower-third-page { background: transparent; }
+.lower-third {
+  position: absolute; left: 88px; bottom: 84px; width: 1040px; height: 180px;
+  border-radius: 30px; display: grid; grid-template-columns: 136px 1fr; align-items: center;
+  padding: 0 36px 0 24px; overflow: hidden;
+}
+.lower-third::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 14px; background: linear-gradient(180deg, #4A90E2, #C4A35A);
+}
+.badge-mark {
+  width: 92px; height: 92px; border-radius: 24px; background: rgba(243,249,255,0.08);
+  border: 1px solid rgba(196,163,90,0.28); display: grid; place-items: center; color: var(--gold);
+  font-size: 42px; font-weight: 900; letter-spacing: -0.05em;
+}
+.copy { padding-left: 8px; }
+.name { font-size: 52px; font-weight: 900; letter-spacing: -0.03em; color: var(--white); }
+.role { margin-top: 8px; font-size: 28px; font-weight: 500; color: rgba(243,249,255,0.84); }
+
+            </style>
+          </head>
+          <body class="transparent">
+
+<main class="page lower-third-page">
+  <div class="lower-third callout-box">
+    <div class="badge-mark">JP</div>
+    <div class="copy">
+      <div class="name" data-check="name">Juan Pedro Márquez</div>
+      <div class="role" data-check="role">Arquitectura de IA · Gobernanza · ROI</div>
+    </div>
+  </div>
+</main>
+
+          </body>
+        </html>

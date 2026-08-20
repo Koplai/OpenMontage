@@ -1,0 +1,57 @@
+<!doctype html>
+        <html lang="en" class="">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>banner en</title>
+            <link rel="stylesheet" href="../brand.css" />
+            <style>
+
+.banner-page { background: linear-gradient(135deg, #0A1628 0%, #131E2E 68%, #0F2037 100%); }
+.safe-zone {
+  position: absolute; left: 507px; top: 509px; width: 1546px; height: 423px;
+  display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 42px; align-items: center;
+  border-top: 1px solid rgba(74,144,226,0.18); border-bottom: 1px solid rgba(74,144,226,0.18);
+}
+.copy h1 {
+  margin: 22px 0 0; width: 780px; font-size: 104px; line-height: 0.95; font-weight: 900; letter-spacing: -0.05em;
+}
+.copy p {
+  margin: 20px 0 0; width: 760px; font-size: 36px; line-height: 1.16; color: rgba(243,249,255,0.86);
+}
+.topic-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-self: stretch;
+  padding: 24px 0 24px 10px;
+}
+.topic-card {
+  border-radius: 24px; background: rgba(19,30,46,0.78); border: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: flex-end; justify-content: flex-start; padding: 22px 22px 20px;
+  font-size: 28px; font-weight: 900; letter-spacing: -0.02em; box-shadow: var(--shadow);
+}
+.accent-azure { box-shadow: inset 0 0 0 1px rgba(74,144,226,0.28); }
+.accent-gold { box-shadow: inset 0 0 0 1px rgba(196,163,90,0.32); }
+.accent-ice { box-shadow: inset 0 0 0 1px rgba(243,249,255,0.24); }
+.accent-slate { box-shadow: inset 0 0 0 1px rgba(71,96,125,0.34); }
+
+            </style>
+          </head>
+          <body class="">
+
+<main class="page bg-grid grain banner-page">
+  <div class="safe-zone">
+    <section class="copy">
+      <div class="eyebrow"><span class="dot"></span>Technical series</div>
+      <h1 data-check="title">AI in Production</h1>
+      <p data-check="subtitle">Architecture, governance and ROI without hype</p>
+    </section>
+    <section class="topic-grid">
+      <div class="topic-card accent-azure">Architecture</div>
+      <div class="topic-card accent-gold">Governance</div>
+      <div class="topic-card accent-ice">Security</div>
+      <div class="topic-card accent-slate">ROI</div>
+    </section>
+  </div>
+</main>
+
+          </body>
+        </html>
