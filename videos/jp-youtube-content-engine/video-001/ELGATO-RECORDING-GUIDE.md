@@ -8,55 +8,62 @@ This configuration is tailored to the software detected on this Mac:
 - Elgato's OBS Studio Stream Deck plugin
 - Elgato Prompter managed through `prompter-kit`
 
-## Stream Deck profile: JPMarquez Studio
+## Installed recording flow
 
-Create a dedicated profile instead of modifying the default profile. Use this
-layout:
+Run `./setup-recording.sh` from this directory to create a timestamped backup,
+configure Camera Hub and OBS, and install a dedicated `VID-001` folder on the
+existing Stream Deck profile. The installer refuses to overwrite the target key
+if it contains an unrelated action.
+
+The focused recording surface is `record.html`. It replaces the previous path
+through the content dashboard, browser teleprompter, and production manifest.
+Camera Hub is the production teleprompter; the browser teleprompter remains only
+as a rehearsal fallback.
+
+The installed Stream Deck layout is:
 
 | | Column 1 | Column 2 | Column 3 | Column 4 | Column 5 |
 | --- | --- | --- | --- | --- | --- |
-| Row 1 | PREP | CAMERA HUB | SLIDES | INBOX | EDIT |
-| Row 2 | CAMERA | DEMO | CAMERA + DEMO | FULL SLIDE | PRIVACY |
-| Row 3 | START | PAUSE | MUTE | MARK | STOP |
+| Row 1 | BACK | PREPARE | SLIDES | CHECKLIST | PRIVACY |
+| Row 2 | CAMERA | SCREEN | CAMERA + SCREEN | PREVIOUS CHAPTER | NEXT CHAPTER |
+| Row 3 | START | PAUSE TEXT | MICROPHONE | RECORDINGS | STOP |
 
-### Row 1 — production system
+### Row 1 — preparation and safety
 
-- **PREP**: Multi Action → open Camera Hub, open OBS, and switch to the
-  `JP · Camera` scene.
-- **CAMERA HUB**: System → Open → `/Applications/Elgato Camera Hub.app`
-- **SLIDES**: System → Open the approved `video-001/slides.html` file.
-- **INBOX**: System → Open the permanent VID-001 OneDrive recording folder.
-- **EDIT**: leave unassigned for VID-001. Start the OpenMontage editing session
-  only after manually confirming the complete recording set.
+- **PREPARE** opens Camera Hub, OBS, and `record.html`.
+- **SLIDES** opens the approved presentation.
+- **CHECKLIST** opens the printable production resource.
+- **PRIVACY** switches OBS to `Intro / BRB`, which must not contain desktop
+  capture or tenant data.
 
 ### Row 2 — OBS scenes
 
-Use the installed OBS Studio plugin and create these exact scene names:
+The controls use explicit global shortcuts against the existing OBS scenes:
 
-- `JP · Camera`
-- `JP · Demo`
-- `JP · Camera + Demo`
-- `JP · Full Slide`
-- `JP · Privacy`
+- `Cámara`
+- `Pantalla`
+- `Pantalla + Cámara`
+- `Intro / BRB`
 
-`JP · Privacy` must contain no live desktop capture, notifications, tenant
+`Intro / BRB` must contain no live desktop capture, notifications, tenant
 details, or browser content. It is the emergency scene to press before opening
 an unexpected window.
 
 ### Row 3 — recording safety
 
-- **START**: Multi Action:
-  1. OBS → switch to `JP · Camera`.
-  2. OBS → Start Recording.
-- **PAUSE**: OBS → Pause Recording.
-- **MUTE**: OBS → Mute source for the dedicated microphone.
-- **MARK**: use a visible hand raise and say “marca” after a mistake, then pause
-  and repeat the complete sentence. This gives the editor both waveform and
-  visual evidence without relying on an unverified plugin.
-- **STOP**: OBS → Stop Recording.
+- **START** selects the Camera scene, starts OBS recording, waits 700 ms, then
+  starts Camera Hub autoscroll. Both visible states must change before speaking.
+- **PAUSE TEXT** pauses or resumes the Prompter while OBS continues recording.
+  After a mistake, raise a hand, say “marca,” and repeat the complete sentence.
+- **MICROPHONE** toggles the existing OBS `Mic/Aux` source.
+- **RECORDINGS** opens `~/Movies`.
+- **STOP** pauses the Prompter, waits 300 ms, and stops OBS.
 
 Keep START and STOP on opposite corners. Do not use one toggle for both; a
 misread button state can stop a good take.
+
+If the Prompter was manually paused, resume it before pressing STOP. This keeps
+the toggle state aligned and prevents STOP from restarting the text.
 
 ## Camera Hub starting point
 
@@ -83,7 +90,7 @@ Before every take, verify exposure, focus, white balance, frame rate, and the
 selected preset. Automatic settings may be useful during setup but should not
 change visibly while recording.
 
-## OBS recording baseline
+## OBS recording baseline installed
 
 - Canvas and output: `2560 × 1440`.
 - Frame rate: match Camera Hub, normally `30 fps`.
@@ -96,6 +103,11 @@ change visibly while recording.
 - Track 3: isolated system/demo audio.
 - Disable desktop notifications and use a clean macOS desktop profile.
 - Record a sync clap and at least ten seconds of room tone.
+
+The installer sets 2560 × 1440, 30 fps, 48 kHz, MKV, Apple H.264, recording
+hotkeys, scene hotkeys, and the `Mic/Aux` mute hotkey. It intentionally leaves
+the existing audio routing in place; isolated tracks require selecting and
+testing the actual microphone and system-audio devices.
 
 After remuxing, rename the deliverables exactly as declared in the episode
 manifest. Confirm every expected file has finished syncing before starting the
@@ -111,9 +123,19 @@ the approved production package for the editor.
 
 Recommended operating method:
 
-1. Read one chapter ahead before recording.
-2. Keep scrolling slightly slower than natural speech.
-3. Pause at the end of a chapter instead of racing the scroll.
-4. Press **MARK** after a mistake and repeat the complete sentence.
-5. For live demos, keep the Prompter visible only for the current explanation;
+1. Press **PREPARE** and complete the preflight in `record.html`.
+2. Confirm that Camera Hub shows the exact VID-001 script and is stopped at the
+   beginning.
+3. Press **START** and verify both OBS recording and text movement before
+   speaking.
+4. Keep scrolling slightly slower than natural speech.
+5. Pause at the end of a chapter instead of racing the scroll.
+6. After a mistake, pause the text, raise a hand, say “marca,” and repeat the
+   complete sentence.
+7. For live demos, keep the Prompter visible only for the current explanation;
    do not read while searching through the interface.
+
+Camera Hub global shortcuts require macOS Accessibility permission for Camera
+Hub and Stream Deck. If START records but does not move the text, enable both in
+**System Settings → Privacy & Security → Accessibility**, then restart both
+applications.
