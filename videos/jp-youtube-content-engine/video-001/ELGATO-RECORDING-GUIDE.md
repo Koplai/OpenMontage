@@ -11,9 +11,9 @@ This configuration is tailored to the software detected on this Mac:
 ## Installed recording flow
 
 Run `./setup-recording.sh` from this directory to create a timestamped backup,
-configure Camera Hub and OBS, and install a dedicated `VID-001` folder on the
-existing Stream Deck profile. The installer refuses to overwrite the target key
-if it contains an unrelated action.
+configure Camera Hub and OBS, and install all 15 VID-001 controls directly on
+the main Stream Deck page. The original page is preserved behind the
+**ORIGINAL** key; its **BACK** key returns to the recording controls.
 
 The focused recording surface is `record.html`. It replaces the previous path
 through the content dashboard, browser teleprompter, and production manifest.
@@ -24,17 +24,19 @@ The installed Stream Deck layout is:
 
 | | Column 1 | Column 2 | Column 3 | Column 4 | Column 5 |
 | --- | --- | --- | --- | --- | --- |
-| Row 1 | BACK | PREPARE | SLIDES | CHECKLIST | PRIVACY |
-| Row 2 | CAMERA | SCREEN | CAMERA + SCREEN | PREVIOUS CHAPTER | NEXT CHAPTER |
-| Row 3 | START | PAUSE TEXT | MICROPHONE | RECORDINGS | STOP |
+| Row 1 | ORIGINAL | PREPARE | SLIDES | MICROPHONE | PRIVACY |
+| Row 2 | CAMERA | SCREEN | CAMERA + SCREEN | PREVIOUS SLIDE | NEXT SLIDE |
+| Row 3 | START | PAUSE TEXT | PREVIOUS CHAPTER | NEXT CHAPTER | STOP |
 
 ### Row 1 — preparation and safety
 
 - **PREPARE** opens Camera Hub, OBS, and `record.html`.
 - **SLIDES** opens the approved presentation.
-- **CHECKLIST** opens the printable production resource.
+- **MICROPHONE** toggles the existing OBS `Mic/Aux` source.
 - **PRIVACY** switches OBS to `Intro / BRB`, which must not contain desktop
   capture or tenant data.
+- **ORIGINAL** opens the pre-existing Stream Deck controls without deleting
+  them.
 
 ### Row 2 — OBS scenes
 
@@ -44,6 +46,10 @@ The controls use explicit global shortcuts against the existing OBS scenes:
 - `Pantalla`
 - `Pantalla + Cámara`
 - `Intro / BRB`
+
+**PREVIOUS SLIDE** and **NEXT SLIDE** send the left and right arrow keys. Open
+the presentation once with **SLIDES** and keep its browser window active while
+using these two controls.
 
 `Intro / BRB` must contain no live desktop capture, notifications, tenant
 details, or browser content. It is the emergency scene to press before opening
@@ -55,8 +61,6 @@ an unexpected window.
   starts Camera Hub autoscroll. Both visible states must change before speaking.
 - **PAUSE TEXT** pauses or resumes the Prompter while OBS continues recording.
   After a mistake, raise a hand, say “marca,” and repeat the complete sentence.
-- **MICROPHONE** toggles the existing OBS `Mic/Aux` source.
-- **RECORDINGS** opens `~/Movies`.
 - **STOP** pauses the Prompter, waits 300 ms, and stops OBS.
 
 Keep START and STOP on opposite corners. Do not use one toggle for both; a

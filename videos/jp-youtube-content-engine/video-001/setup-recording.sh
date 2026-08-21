@@ -50,7 +50,7 @@ open -a "/Applications/Elgato Stream Deck.app"
 open "$SCRIPT_DIR/record.html"
 
 echo
-echo "VID-001 recording controls installed."
+echo "VID-001 recording controls installed directly on all 15 Stream Deck keys."
 echo "Backup: $BACKUP_DIR"
 echo "If Stream Deck cannot control Camera Hub, enable Camera Hub and Stream Deck"
 echo "in System Settings > Privacy & Security > Accessibility."

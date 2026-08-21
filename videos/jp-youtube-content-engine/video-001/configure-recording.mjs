@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -11,9 +12,9 @@ import {
 import { basename, join, resolve } from "node:path";
 
 const SCRIPT_ID = "C12B7AD5-19D5-4814-A758-72E1755C94DC";
-const CHILD_PROFILE_ID = "A4C11A7E-1D01-4D85-9B7A-0F4A67D00101";
-const CHILD_PROFILE_KEY = CHILD_PROFILE_ID.toLowerCase();
-const ROOT_KEY_POSITION = "3,0";
+const LEGACY_PROFILE_KEY = "a4c11a7e-1d01-4d85-9b7a-0f4a67d00101";
+const ORIGINAL_PROFILE_ID = "B7E80119-9C3B-4CC7-90B2-1B55E7A00101";
+const ORIGINAL_PROFILE_KEY = ORIGINAL_PROFILE_ID.toLowerCase();
 
 function readArgs() {
   const args = {};
@@ -185,9 +186,11 @@ const keyCodes = {
   SPACE: [49, 32],
   PAGE_UP: [116, 16777238],
   PAGE_DOWN: [121, 16777239],
+  LEFT: [123, 16777234],
+  RIGHT: [124, 16777236],
 };
 
-function hotkeySettings(key) {
+function hotkeySettings(key, { command = true, control = true } = {}) {
   const codes = keyCodes[key];
   if (!codes) throw new Error(`Unknown Stream Deck key: ${key}`);
   const [nativeCode, qtKeyCode] = codes;
@@ -195,9 +198,9 @@ function hotkeySettings(key) {
     Coalesce: true,
     Hotkeys: [
       {
-        KeyCmd: true,
-        KeyCtrl: true,
-        KeyModifiers: 10,
+        KeyCmd: command,
+        KeyCtrl: control,
+        KeyModifiers: command && control ? 10 : 0,
         KeyOption: false,
         KeyShift: false,
         NativeCode: nativeCode,
@@ -236,12 +239,12 @@ function baseAction(name, uuid, image, settings = {}) {
   };
 }
 
-function hotkeyAction(name, key, image) {
+function hotkeyAction(name, key, image, modifiers) {
   return baseAction(
     name,
     "com.elgato.streamdeck.system.hotkey",
     image,
-    hotkeySettings(key),
+    hotkeySettings(key, modifiers),
   );
 }
 
@@ -314,58 +317,75 @@ function findMainPage(profilePath) {
 
 function configureStreamDeck(profilePath, repoRoot) {
   const pageId = findMainPage(profilePath);
-  const rootManifestPath = join(profilePath, "Profiles", pageId, "manifest.json");
+  const rootPagePath = join(profilePath, "Profiles", pageId);
+  const rootManifestPath = join(rootPagePath, "manifest.json");
   const rootManifest = readJson(rootManifestPath);
   const rootActions = rootManifest.Controllers?.[0]?.Actions;
   if (!rootActions) throw new Error("The Stream Deck main page has no action collection");
 
-  const currentRootAction = rootActions[ROOT_KEY_POSITION];
-  const currentProfileId = currentRootAction?.Settings?.ProfileUUID;
-  if (currentRootAction && currentProfileId !== CHILD_PROFILE_KEY) {
-    throw new Error(
-      `Stream Deck key ${ROOT_KEY_POSITION} is no longer empty. No existing key was overwritten.`,
-    );
-  }
-
-  const childPath = join(profilePath, "Profiles", CHILD_PROFILE_ID);
-  const imagesPath = join(childPath, "Images");
+  const imagesPath = join(rootPagePath, "Images");
   mkdirSync(imagesPath, { recursive: true });
 
   const icons = {
-    folder: writeIcon(join(profilePath, "Profiles", pageId, "Images"), "jp-vid001", ["VID-001"], "#C4A35A", "JP"),
-    back: writeIcon(imagesPath, "back", ["VOLVER"], "#9FC9F7", "←"),
+    original: writeIcon(imagesPath, "original", ["ORIGINAL"], "#9FC9F7", "JP"),
     prep: writeIcon(imagesPath, "prep", ["PREPARAR"], "#C4A35A", "1"),
     slides: writeIcon(imagesPath, "slides", ["SLIDES"], "#4A90E2", "▣"),
-    checklist: writeIcon(imagesPath, "checklist", ["CHECKLIST"], "#C4A35A", "✓"),
     privacy: writeIcon(imagesPath, "privacy", ["PRIVACIDAD"], "#F07474", "■"),
     camera: writeIcon(imagesPath, "camera", ["CÁMARA"], "#59C99A", "●"),
     screen: writeIcon(imagesPath, "screen", ["PANTALLA"], "#4A90E2", "▭"),
     pip: writeIcon(imagesPath, "pip", ["CÁMARA", "+ PANT."], "#9FC9F7", "◫"),
-    previous: writeIcon(imagesPath, "previous", ["CAPÍTULO", "ANTERIOR"], "#C4A35A", "‹"),
-    next: writeIcon(imagesPath, "next", ["CAPÍTULO", "SIGUIENTE"], "#C4A35A", "›"),
+    slidePrevious: writeIcon(imagesPath, "slide-previous", ["SLIDE", "ANTERIOR"], "#4A90E2", "‹"),
+    slideNext: writeIcon(imagesPath, "slide-next", ["SLIDE", "SIGUIENTE"], "#4A90E2", "›"),
+    chapterPrevious: writeIcon(imagesPath, "chapter-previous", ["CAPÍTULO", "ANTERIOR"], "#C4A35A", "‹"),
+    chapterNext: writeIcon(imagesPath, "chapter-next", ["CAPÍTULO", "SIGUIENTE"], "#C4A35A", "›"),
     start: writeIcon(imagesPath, "start", ["EMPEZAR"], "#59C99A", "▶"),
     script: writeIcon(imagesPath, "script", ["PAUSA", "TEXTO"], "#F2BD62", "Ⅱ"),
     mic: writeIcon(imagesPath, "mic", ["MICRÓFONO"], "#9FC9F7", "M"),
-    files: writeIcon(imagesPath, "files", ["GRABACIONES"], "#9FC9F7", "⌂"),
     stop: writeIcon(imagesPath, "stop", ["TERMINAR"], "#F07474", "■"),
   };
 
-  rootActions[ROOT_KEY_POSITION] = baseAction(
-    "VID-001 recording",
-    "com.elgato.streamdeck.profile.openchild",
-    icons.folder,
-    { ProfileUUID: CHILD_PROFILE_KEY },
-  );
+  const originalPath = join(profilePath, "Profiles", ORIGINAL_PROFILE_ID);
+  const originalManifestPath = join(originalPath, "manifest.json");
+  if (!existsSync(originalManifestPath)) {
+    const originalImagesPath = join(originalPath, "Images");
+    mkdirSync(originalImagesPath, { recursive: true });
+    cpSync(imagesPath, originalImagesPath, { recursive: true });
+    const originalActions = Object.fromEntries(
+      Object.entries(rootActions).filter(
+        ([, action]) => action.Settings?.ProfileUUID !== LEGACY_PROFILE_KEY,
+      ),
+    );
+    const originalBackIcon = writeIcon(
+      originalImagesPath,
+      "back",
+      ["VOLVER"],
+      "#9FC9F7",
+      "←",
+    );
+    originalActions["3,0"] = baseAction(
+      "Return to recording controls",
+      "com.elgato.streamdeck.profile.backtoparent",
+      originalBackIcon,
+    );
+    writeJson(originalManifestPath, {
+      Controllers: [{ Actions: originalActions, Type: "Keypad" }],
+      Icon: "",
+      Name: "Controles originales",
+    });
+  }
 
   const videoPath = join(repoRoot, "videos", "jp-youtube-content-engine", "video-001");
   const cameraHubPath = "/Applications/Elgato Camera Hub.app";
   const obsPath = "/Applications/OBS.app";
   const recordPath = join(videoPath, "record.html");
   const slidesPath = join(videoPath, "slides.html");
-  const checklistPath = join(videoPath, "checklist-copilot-studio-produccion.pdf");
-
   const actions = {
-    "0,0": baseAction("Parent Folder", "com.elgato.streamdeck.profile.backtoparent", icons.back),
+    "0,0": baseAction(
+      "Open original controls",
+      "com.elgato.streamdeck.profile.openchild",
+      icons.original,
+      { ProfileUUID: ORIGINAL_PROFILE_KEY },
+    ),
     "1,0": multiAction(
       "Prepare VID-001",
       [
@@ -378,13 +398,23 @@ function configureStreamDeck(profilePath, repoRoot) {
       icons.prep,
     ),
     "2,0": openAction("Open slides", slidesPath, icons.slides),
-    "3,0": openAction("Open checklist", checklistPath, icons.checklist),
+    "3,0": hotkeyAction("Mute or unmute microphone", "M", icons.mic),
     "4,0": hotkeyAction("Privacy scene", "4", icons.privacy),
     "0,1": hotkeyAction("Camera scene", "1", icons.camera),
     "1,1": hotkeyAction("Screen scene", "2", icons.screen),
     "2,1": hotkeyAction("Camera plus screen scene", "3", icons.pip),
-    "3,1": hotkeyAction("Previous Prompter chapter", "PAGE_UP", icons.previous),
-    "4,1": hotkeyAction("Next Prompter chapter", "PAGE_DOWN", icons.next),
+    "3,1": hotkeyAction(
+      "Previous slide",
+      "LEFT",
+      icons.slidePrevious,
+      { command: false, control: false },
+    ),
+    "4,1": hotkeyAction(
+      "Next slide",
+      "RIGHT",
+      icons.slideNext,
+      { command: false, control: false },
+    ),
     "0,2": multiAction(
       "Start recording and Prompter",
       [
@@ -397,8 +427,16 @@ function configureStreamDeck(profilePath, repoRoot) {
       icons.start,
     ),
     "1,2": hotkeyAction("Pause or resume Prompter", "P", icons.script),
-    "2,2": hotkeyAction("Mute or unmute microphone", "M", icons.mic),
-    "3,2": openAction("Open recordings", `${process.env.HOME}/Movies`, icons.files),
+    "2,2": hotkeyAction(
+      "Previous Prompter chapter",
+      "PAGE_UP",
+      icons.chapterPrevious,
+    ),
+    "3,2": hotkeyAction(
+      "Next Prompter chapter",
+      "PAGE_DOWN",
+      icons.chapterNext,
+    ),
     "4,2": multiAction(
       "Stop Prompter and recording",
       [
@@ -410,12 +448,8 @@ function configureStreamDeck(profilePath, repoRoot) {
     ),
   };
 
+  rootManifest.Controllers[0].Actions = actions;
   writeJson(rootManifestPath, rootManifest);
-  writeJson(join(childPath, "manifest.json"), {
-    Controllers: [{ Actions: actions, Type: "Keypad" }],
-    Icon: "",
-    Name: "VID-001 · Grabación",
-  });
 }
 
 function main() {
