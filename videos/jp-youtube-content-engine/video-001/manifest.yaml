@@ -47,6 +47,19 @@ editing:
   project_workspace: projects/vid-001-copilot-studio-produccion
   preserve_originals: true
   identity_kit: videos/jp-youtube-channel-kit
+  music:
+    primary_generator: ace_step_1_5
+    style: restrained_ambient_tech
+    bpm: 92
+    key: D_minor
+    vocals: false
+    continuous_bed: false
+    dialogue_priority: true
+    under_dialogue_db: [-18, -14]
+    sidechain_ducking_db: [4, 8]
+    final_integrated_lufs: -14
+    final_true_peak_dbtp_max: -1
+    provenance_required: [prompt, model_version, seed, generated_at, human_approval]
   intro_max_seconds: 3
   lower_third_max_uses: 2
   end_screen_reserved_seconds: 20
@@ -69,9 +82,35 @@ quality_gates:
   - id: final_qc
     owner: quality_controller
     approval: human
+  - id: derivative_qc
+    owner: derivative_editor
+    approval: human
   - id: publish
     owner: youtube_publisher
     approval: human
+
+derivatives:
+  workflow: ../shorts-workflow.yaml
+  source: approved_final_master
+  outputs:
+    - id: VID-001-S01
+      source_range: "00:00-00:32"
+      duration_target_seconds: 35
+      youtube_related_video_required: true
+      linkedin_native_upload: true
+      utm_content: vid001_short01
+    - id: VID-001-S02
+      source_range: "06:45-07:43"
+      duration_target_seconds: 61
+      youtube_related_video_required: true
+      linkedin_native_upload: true
+      utm_content: vid001_short02
+  format:
+    canvas: 1080x1920
+    aspect_ratio: "9:16"
+    captions: burned_in_and_srt
+    safe_area_check: blocking
+  public_publish_requires_human_approval: true
 
 publishing:
   resource_url: https://jpmarquez.com/es/recursos/checklist-copilot-studio-produccion/
@@ -83,6 +122,15 @@ publishing:
     content: vid001_description
   visibility: private_until_human_approval
   comments: held_for_review_first_24h
+  linkedin:
+    upload: native_video
+    destination: specific_youtube_flagship
+    url_placeholder: "{{YOUTUBE_VIDEO_URL_WITH_LINKEDIN_UTM}}"
+    utm:
+      source: linkedin
+      medium: organic_video
+      campaign: copilot_studio_produccion
+    visibility: draft_until_human_approval
 
 analytics:
   review_windows_hours: [24, 168, 672]
@@ -95,3 +143,9 @@ analytics:
     - resource_opt_ins
     - assessment_starts
     - qualified_conversations
+    - short_related_video_clicks
+    - attributed_flagship_sessions
+    - linkedin_video_completion
+    - linkedin_saves
+    - linkedin_meaningful_comments
+    - linkedin_outbound_clicks

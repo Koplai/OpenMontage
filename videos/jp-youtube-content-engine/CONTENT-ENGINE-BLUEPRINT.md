@@ -1,6 +1,6 @@
 # YouTube Content Engine — Juan Pedro Marquez
 
-> Authoritative operating plan · Spanish first · Version 1.0 · 2026-08-21
+> Authoritative operating plan · Spanish first · Version 1.1 · 2026-08-21
 
 ## 1. The channel thesis
 
@@ -42,6 +42,9 @@ educational-content disclaimer and avoid implying Microsoft endorsement.
 
 The visual source of truth remains
 `videos/jp-youtube-channel-kit/CHANNEL-KIT-GUIDE.md`.
+The sonic and derivative source of truth is
+`MUSIC-SHORTS-LINKEDIN-PLAYBOOK.md`, with the machine-readable contract in
+`shorts-workflow.yaml`.
 
 ## 2. Audience and jobs to be done
 
@@ -76,7 +79,9 @@ The visual source of truth remains
 
 - **2 flagship videos** per month, 9–15 minutes each.
 - **4 Shorts** per month: two purposeful extracts per flagship.
-- **2 LinkedIn documents or posts** per month.
+- **4 native LinkedIn video posts** per month: each Short receives professional
+  framing and a tracked route to the specific flagship.
+- **2 LinkedIn documents** per month: one framework carousel per flagship.
 - **2 transcript/article pages** on jpmarquez.com.
 - **1 new or improved lead magnet** per month, reused across related videos.
 - **1 gated AB-731 lesson** per month after the first two flagship videos are
@@ -104,6 +109,20 @@ research.
 Maintain one finished backup video and one researched backup topic. If a
 Microsoft interface changes, publish the backup instead of rushing an invalid
 demo.
+
+### Derivative rhythm per flagship
+
+| Relative day | Asset | Destination | Primary action |
+| ---: | --- | --- | --- |
+| 0 | Full episode | YouTube + transcript page | Watch, navigate, download |
+| +2 | Short A | YouTube Shorts | Open the Related video |
+| +3 | Clip A | LinkedIn native video | Watch the specific flagship |
+| +6 | Short B | YouTube Shorts | Open the Related video |
+| +7 | Clip B | LinkedIn native video | Watch the specific flagship |
+| +9 | Framework carousel | LinkedIn document | Save, discuss, watch |
+
+This is one research package expressed six ways, not six independent content
+projects.
 
 ## 4. Demand research without invented data
 
@@ -211,12 +230,36 @@ Use Feynman-style language, worked examples before abstraction, chunking,
 signposting, dual coding, retrieval prompts, deliberate pauses, and vocal
 contrast. Do not imitate or claim endorsement by a public speaker.
 
+### Sonic identity
+
+The sound is **calm technical momentum**: restrained ambient-tech at 88–96 BPM,
+with warm analog pulse, dry muted percussion, sparse glass-like plucks, and no
+vocals or dominant melody. Avoid corporate ukulele, festival drops, trailer
+braams, vinyl crackle, and decorative music during dense demos.
+
+Music is structural, not wallpaper:
+
+- controlled tension for the first 8–16 seconds;
+- a brief lift when the method is introduced;
+- silence or an almost inaudible pad during technical explanation;
+- a 0.4–0.8 second sonic mark between chapters;
+- a restrained pulse during the final decision;
+- a warmer resolved variation under the CTA and end screen.
+
+Use ACE-Step 1.5 as the primary generator with a fixed seed and a complete
+provenance record. Dialogue remains 14–18 dB above music, with 4–8 dB of
+side-chain ducking. The complete prompt, cue-sheet, mix rules, licensing
+controls, and derivative workflow are in
+`MUSIC-SHORTS-LINKEDIN-PLAYBOOK.md`.
+
 ## 6. Funnel and monetization
 
 ### Funnel architecture
 
 ```text
-Search / recommendation / LinkedIn
+Search / recommendation
+        ↓
+YouTube Short or LinkedIn native clip
         ↓
 Flagship video → playlist → next video
         ↓
@@ -255,6 +298,25 @@ landing page. Add:
 
 Do not publish a video CTA until its landing page works in a private browser,
 the email is delivered, and the download can be opened on mobile.
+
+### LinkedIn is a native discovery surface
+
+Upload each derivative as a native LinkedIn video with corrected captions. Do
+not post a YouTube link preview as the content itself. The copy teaches one
+professional insight and then links to the exact flagship with:
+
+```text
+utm_source=linkedin
+utm_medium=organic_video
+utm_campaign=<flagship_campaign>
+utm_content=<derivative_id>
+```
+
+The same destination may be mirrored in the first comment for usability, but
+the strategy does not claim an undocumented algorithm advantage. Keep the
+current flagship or playlist in the LinkedIn profile's Featured section.
+YouTube Shorts use the platform's Related video feature to connect directly to
+the flagship.
 
 ### Five-email application sequence
 
@@ -333,9 +395,12 @@ is an outcome; exam-content reproduction is not.
 | Technical verifier | Claims, docs, demo tenant | Claims ledger, working demo, failure states | Use customer data |
 | Showrunner | Approved angle and demo | Camera script, screen script, chapters, cues | Hide uncertainty |
 | Visual producer | Script and brand kit | Slides, diagrams, thumbnail variants, overlays | Break safe areas |
+| Music director | Script, timing, sonic identity | Prompt, cue-sheet, track, provenance, mix notes | Mask dialogue |
 | OpenMontage editor | Original recordings and manifest | Rough cut, captions, audio mix, final masters | Modify originals |
+| Derivative editor | Approved master, transcript, channel kit | Candidate report, Shorts, LinkedIn masters, captions, copy | Approve its own candidates |
 | Quality controller | Cut, sources, manifest, landing page | Blocking/non-blocking report | Waive text overflow |
 | YouTube publisher | Approved package | Private upload, metadata, chapters, cards, checks | Make public |
+| LinkedIn publisher | Approved native master, copy, UTM | Draft video post and tracked link | Publish without approval |
 | Web publisher | Transcript and resource | Video page, schema, PDF delivery | Publish broken form |
 | Growth analyst | 24h/7d/28d data | Learning memo and backlog changes | Claim causation from one video |
 
@@ -362,8 +427,14 @@ OneDrive/
             ├── 03_Demo/
             ├── 04_Recordings/INBOX/
             ├── 05_Assets/
+            │   ├── Music/
+            │   └── Derivatives/
             ├── 06_Edit/
+            │   ├── Flagship/
+            │   └── Vertical/
             ├── 07_Publish/
+            │   ├── YouTube/
+            │   └── LinkedIn/
             └── 08_Analytics/
 ```
 
@@ -418,9 +489,22 @@ description, resource, sources, manifest, and analytics snapshot exist.
 - Brand kit and safe areas respected.
 - Text overflow is always blocking.
 - Captions are synchronized and corrected.
+- Music follows the approved cue-sheet, provenance is recorded, and dialogue
+  remains intelligible on phone speakers.
 - Loudness, peaks, silence, black frames, frame rate, and encoding validated.
 - Sources and screenshots are licensed or original.
 - Twenty seconds remain usable for the end screen.
+
+### Derivative gate
+
+- Candidate selection starts from the approved final master, not raw footage.
+- Automatic scoring proposes 6–10 passages; Juan Pedro chooses two.
+- Each excerpt teaches a complete idea and preserves the flagship's meaning.
+- Output is 1080 × 1920 with corrected burned captions and SRT.
+- Face, captions, and interface evidence pass the mobile safe-area check.
+- YouTube uses Related video; LinkedIn uses native video and a distinct UTM.
+- Music never masks speech and no pre-roll ident delays the hook.
+- Final crop, captions, copy, link, and public visibility require human approval.
 
 ### Publish gate
 
@@ -457,6 +541,8 @@ Use targets as operating hypotheses, not external benchmarks:
 | Conversion | Resource opt-ins / landing visits | Establish baseline before setting target |
 | Qualification | Assessment starts and relevant replies | Track by campaign and video |
 | Business | Qualified conversations and product revenue | Attribute with UTM and CRM source |
+| Derivative journey | Related-video clicks and attributed flagship sessions | Establish baseline per clip |
+| LinkedIn | Completion, saves, meaningful comments, outbound clicks | Compare ideas, not unlike formats |
 
 Never compare unlike traffic sources or diagnose causation from a single
 upload. Record thumbnail/title changes with timestamps so analytics remain
@@ -472,6 +558,9 @@ needs:
 - source freshness and a correction policy;
 - accessibility, captions, readable UI, and color contrast;
 - media licensing and provenance;
+- an explicit sonic identity, cue-sheet, and speech-first mix standard;
+- a human-approved automatic Shorts pipeline;
+- native LinkedIn video distribution with platform-specific copy and attribution;
 - immutable originals, backup, and archive rules;
 - a backup episode for product UI changes;
 - owner succession and continuity;
@@ -490,6 +579,8 @@ needs:
 5. Record camera, screen, audio, and room tone using the manifest names.
 6. Move the recordings to `04_Recordings/INBOX`.
 7. Trigger the editing workflow and review the rough cut; do not publish.
+8. After final-cut approval, run `shorts-workflow.yaml`, approve two candidates,
+   and prepare the native YouTube and LinkedIn derivatives.
 
 The first video package is in `video-001/`.
 
@@ -505,4 +596,11 @@ The first video package is in `video-001/`.
 - [YouTube Partner Program](https://support.google.com/youtube/answer/72851)
 - [YouTube custom thumbnails](https://support.google.com/youtube/answer/72431)
 - [YouTube end screens](https://support.google.com/youtube/answer/6388789)
-
+- [YouTube Related video for Shorts](https://support.google.com/youtube/answer/14075157)
+- [LinkedIn Videos API](https://learn.microsoft.com/linkedin/marketing/community-management/shares/videos-api?view=li-lms-2026-08)
+- [LinkedIn Posts API](https://learn.microsoft.com/linkedin/marketing/community-management/shares/posts-api?view=li-lms-2026-08)
+- [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5)
+- [ClipsAI](https://github.com/ClipsAI/clipsai)
+- [auto-editor](https://github.com/WyattBlue/auto-editor)
+- [OpenClip](https://github.com/linzzzzzz/openclip)
+- [FunClip](https://github.com/modelscope/FunClip)

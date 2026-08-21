@@ -81,6 +81,92 @@ window.JP_VIDEO_001 = {
     "Se graban diez segundos de silencio de sala y una palmada de sincronización.",
     "El final reserva veinte segundos limpios para la pantalla final de YouTube.",
   ],
+  music: {
+    principle:
+      "La voz manda. Música solo para tensión inicial, orientación y cierre; la demo densa se mantiene limpia.",
+    generator:
+      "ACE-Step 1.5 · instrumental original · seed fijo · aprobación humana",
+    sound:
+      "Ambient-tech sobrio a 92 BPM en Re menor: pulso analógico cálido, percusión seca, plucks de cristal y pad aéreo. Sin voces, sin melodía dominante, sin ukulele corporativo y sin sonido de tráiler.",
+    mix:
+      "Comenzar 14–18 dB por debajo del diálogo, ducking de 4–8 dB, objetivo interno aproximado de -14 LUFS y true peak ≤ -1 dBTP.",
+    cues: [
+      {
+        range: "00:00–00:16",
+        name: "Riesgo invisible",
+        treatment:
+          "Pulso de tensión contenido. Entra en el primer fotograma y cae antes de explicar el ejemplo.",
+      },
+      {
+        range: "00:32–00:48",
+        name: "Promesa",
+        treatment:
+          "Añadir un pluck ascendente muy corto y resolver hacia el mapa de cinco controles.",
+      },
+      {
+        range: "00:48–10:16",
+        name: "Método y demo",
+        treatment:
+          "Sin música durante pantalla y pruebas. Solo sonic marks de 0,4–0,8 s en cambios de control.",
+      },
+      {
+        range: "10:16–11:25",
+        name: "Decisión",
+        treatment:
+          "Recuperar un pulso tenue que crece hasta el marcador 5/5.",
+      },
+      {
+        range: "11:25–fin",
+        name: "CTA",
+        treatment:
+          "Variación cálida y resuelta; mantener espacio para la pantalla final y el sonic logo.",
+      },
+    ],
+  },
+  derivatives: [
+    {
+      id: "VID-001-S01",
+      sourceRange: "00:00–00:32",
+      targetDuration: "35 s con CTA",
+      title: "Tu agente puede mentir sin saberlo",
+      hook:
+        "Un agente puede responder perfectamente y seguir sin estar preparado para producción.",
+      lesson:
+        "Una respuesta convincente no demuestra que una acción exista, tenga permiso o haya ocurrido.",
+      edit:
+        "Cámara en vertical, punch-in al decir «Hecho», texto breve RESPUESTA ≠ OPERACIÓN y cierre de tres segundos.",
+      youtubeCta:
+        "En el vídeo relacionado te enseño los cinco controles antes de publicar.",
+      youtubeDescription:
+        "Una respuesta convincente no demuestra que una acción exista, tenga permiso o haya ocurrido. Abre el vídeo relacionado para aplicar los cinco controles antes de publicar un agente de Copilot Studio.",
+      linkedinCta:
+        "He desarrollado los cinco controles con demo y checklist. Vídeo completo: {{YOUTUBE_VIDEO_URL_WITH_LINKEDIN_UTM}}",
+      linkedinPost:
+        "Un agente puede responder «Hecho» sin haber hecho nada. Entender la intención no demuestra autorización. Tener una conexión no demuestra mínimo privilegio. Y una respuesta fluida no demuestra una operación controlada. Antes de publicar, pide evidencia del entorno, los datos, la identidad, las pruebas y la reversión. He desarrollado los cinco controles con una demo y un checklist práctico. Vídeo completo: {{YOUTUBE_VIDEO_URL_WITH_LINKEDIN_UTM}}",
+      utmContent: "vid001_short01",
+    },
+    {
+      id: "VID-001-S02",
+      sourceRange: "06:45–07:43",
+      targetDuration: "61 s con CTA",
+      title: "Prueba lo que tu agente no debería hacer",
+      hook:
+        "Una prueba de calidad no consiste en hacer cinco preguntas fáciles.",
+      lesson:
+        "El set mínimo debe intentar escribir sin permiso, cambiar la fuente autorizada y aceptar privilegios declarados por el usuario.",
+      edit:
+        "Alternar cámara y tres prompts grandes; ocultar cualquier dato del tenant y mantener una prueba por pantalla.",
+      youtubeCta:
+        "El vídeo completo incluye la matriz de evidencia y el checklist descargable.",
+      youtubeDescription:
+        "No pruebes solo las preguntas fáciles. Intenta que el agente escriba sin permiso, cambie de fuente o acepte privilegios declarados por el usuario. La matriz completa está en el vídeo relacionado.",
+      linkedinCta:
+        "¿Cuál es la acción más peligrosa que intentaría tu agente? Los cinco controles y la demo están aquí: {{YOUTUBE_VIDEO_URL_WITH_LINKEDIN_UTM}}",
+      linkedinPost:
+        "Una prueba de calidad no consiste en hacer cinco preguntas fáciles. Prueba lo que el agente no debería hacer: escribir sin una acción autorizada, abandonar la fuente aprobada o aceptar «soy administrador» como permiso. Para cada caso guarda prompt, comportamiento esperado, resultado real y evidencia. ¿Cuál es la acción más peligrosa que podría intentar tu agente? Los cinco controles y la demo completa: {{YOUTUBE_VIDEO_URL_WITH_LINKEDIN_UTM}}",
+      utmContent: "vid001_short02",
+    },
+  ],
   demoTests: [
     {
       prompt: "¿Cuál es el proceso aprobado para incorporar a una persona?",

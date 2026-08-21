@@ -83,13 +83,15 @@
     .status { display: inline-flex; align-items: center; gap: 8px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 5px rgba(242,189,98,.12); }
     .grid { display: grid; gap: 16px; }
+    .grid > * { min-width: 0; }
     .grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
     .grid.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
     .grid.four { grid-template-columns: repeat(4, minmax(0,1fr)); }
     .card {
       border: 1px solid var(--line); background: linear-gradient(150deg, rgba(255,255,255,.065), rgba(255,255,255,.025));
-      border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);
+      border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); min-width: 0;
     }
+    .card p { overflow-wrap: anywhere; }
     .card.gold { border-color: rgba(196,163,90,.38); }
     .card.azure { border-color: rgba(74,144,226,.4); }
     .card p:last-child { margin-bottom: 0; }
@@ -179,7 +181,7 @@
       nav { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .aside-foot { display: none; }
       main { padding: 28px 18px 70px; }
-      .grid.two, .grid.three, .grid.four { grid-template-columns: 1fr; }
+      .grid.two, .grid.three, .grid.four { grid-template-columns: minmax(0, 1fr); }
       .flow { grid-template-columns: 1fr 1fr; }
       .flow > div:not(:last-child)::after { display: none; }
       .section-head { align-items: start; flex-direction: column; }
@@ -210,14 +212,16 @@
       <nav aria-label="Secciones">
         <a href="#control">Control</a>
         <a href="#strategy">Estrategia</a>
+        <a href="#audio">Música</a>
         <a href="#calendar">90 días</a>
         <a href="#funnel">Funnel</a>
+        <a href="#distribution">Shorts + LinkedIn</a>
         <a href="#course">Curso AB-731</a>
         <a href="#workflow">Workflow</a>
         <a href="#video">Primer vídeo</a>
         <a href="#sources">Fuentes</a>
       </nav>
-      <div class="aside-foot">Claro. Directo. Con rigor.<br>v1.0 · 21 agosto 2026</div>
+      <div class="aside-foot">Claro. Directo. Con rigor.<br>v1.1 · 21 agosto 2026</div>
     </aside>
 
     <main>
@@ -228,6 +232,7 @@
         <div class="pill-row">
           <span class="pill"><strong>2</strong> vídeos flagship / mes</span>
           <span class="pill"><strong>4</strong> Shorts / mes</span>
+          <span class="pill"><strong>4</strong> vídeos nativos LinkedIn / mes</span>
           <span class="pill"><strong>1</strong> recurso premium / mes</span>
           <span class="pill"><strong>3</strong> ventanas de análisis</span>
           <span class="pill status"><i class="dot"></i> DataForSEO pendiente</span>
@@ -254,6 +259,7 @@
               <a class="button" href="video-001/checklist.html">Abrir PDF/checklist</a>
               <a class="button" href="video-001/nurture-sequence.html">Emails</a>
               <a class="button" href="video-001/manifest.yaml">Ver manifest</a>
+              <a class="button" href="MUSIC-SHORTS-LINKEDIN-PLAYBOOK.md">Música + distribución</a>
             </div>
           </article>
         </div>
@@ -267,6 +273,7 @@
         <div class="grid four">
           <article class="card metric"><b>2</b><span>Flagships mensuales de 9–15 minutos</span></article>
           <article class="card metric"><b>2×</b><span>Shorts intencionales derivados de cada flagship</span></article>
+          <article class="card metric"><b>2×</b><span>Vídeos nativos LinkedIn con enlace trazable al flagship</span></article>
           <article class="card metric"><b>1</b><span>Activo descargable útil por cluster y mes</span></article>
           <article class="card metric"><b>24h · 7d · 28d</b><span>Aprendizaje en tres ventanas, no por intuición</span></article>
         </div>
@@ -277,6 +284,37 @@
           <article class="card playlist" data-number="4"><span class="tag">PLAYLIST 04</span><h3>Liderazgo y ROI</h3><p>Ruta AB-731, adopción, valor, coste y transformación.</p></article>
         </div>
         <div class="callout" style="margin-top:18px"><strong>Posicionamiento público:</strong> arquitecto de soluciones cloud especializado en IA para empresas europeas. No utilizar el empleo en Microsoft como credencial pública ni insinuar respaldo corporativo.</div>
+      </section>
+
+      <section id="audio">
+        <div class="section-head">
+          <div><span class="eyebrow">Identidad sonora</span><h2>Calma técnica con intención.</h2></div>
+          <p>La música orienta, pero nunca rellena. La voz y la evidencia conservan siempre el primer plano.</p>
+        </div>
+        <div class="grid three">
+          <article class="card">
+            <span class="eyebrow">Sonido</span>
+            <h3>Ambient-tech sobrio</h3>
+            <p id="music-sound"></p>
+          </article>
+          <article class="card">
+            <span class="eyebrow">Generación</span>
+            <h3 id="music-generator"></h3>
+            <p>Prompt, modelo, seed, fecha y aprobación quedan registrados. ElevenLabs Music es fallback de pago, no la ruta principal.</p>
+          </article>
+          <article class="card">
+            <span class="eyebrow">Mezcla</span>
+            <h3>Speech-first</h3>
+            <p id="music-mix"></p>
+          </article>
+        </div>
+        <div class="table-wrap" style="margin-top:18px">
+          <table>
+            <thead><tr><th>Rango</th><th>Cue</th><th>Tratamiento</th></tr></thead>
+            <tbody id="music-cues"></tbody>
+          </table>
+        </div>
+        <div class="callout" style="margin-top:18px"><strong>Regla:</strong> durante demos y explicaciones densas no se usa una cama musical continua. Los cambios de capítulo reciben solo un sonic mark de 0,4–0,8 segundos.</div>
       </section>
 
       <section id="calendar">
@@ -321,6 +359,57 @@
         </div>
       </section>
 
+      <section id="distribution">
+        <div class="section-head">
+          <div><span class="eyebrow">Una investigación, seis activos</span><h2>Shorts y LinkedIn como rutas al flagship.</h2></div>
+          <p>La automatización encuentra candidatos y prepara versiones. Juan Pedro decide qué fragmentos conservan contexto, valor y rigor.</p>
+        </div>
+        <div class="flow">
+          <div><b>Master aprobado</b><span>Única fuente</span></div>
+          <div><b>STT local</b><span>Español + timestamps</span></div>
+          <div><b>6–10 candidatos</b><span>Valor y autosuficiencia</span></div>
+          <div><b>2 aprobados</b><span>Gate humano</span></div>
+          <div><b>9:16</b><span>Reframe + captions</span></div>
+          <div><b>YouTube Short</b><span>Related video</span></div>
+          <div><b>LinkedIn nativo</b><span>UTM al flagship</span></div>
+        </div>
+        <div class="grid two" style="margin-top:18px">
+          <article class="card">
+            <span class="eyebrow">Stack auditado · 21 agosto 2026</span>
+            <h3>Pequeñas herramientas, QA central</h3>
+            <div class="table-wrap" style="margin-top:14px">
+              <table>
+                <tbody>
+                  <tr><td>Transcripción</td><td>OpenMontage + faster-whisper</td></tr>
+                  <tr><td>Scoring</td><td>LLM local compatible con Ollama</td></tr>
+                  <tr><td>Limpieza</td><td><a href="https://github.com/WyattBlue/auto-editor">auto-editor</a> opcional</td></tr>
+                  <tr><td>Reframe</td><td><a href="https://github.com/ClipsAI/clipsai">ClipsAI</a>, commit fijado</td></tr>
+                  <tr><td>Referencia semántica</td><td><a href="https://github.com/linzzzzzz/openclip">OpenClip</a></td></tr>
+                  <tr><td>Render final</td><td>OpenMontage + FFmpeg/HyperFrames</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+          <article class="card">
+            <span class="eyebrow">Cadencia por flagship</span>
+            <h3>Día 0 → día 9</h3>
+            <div class="checklist">
+              <div class="check"><span>0</span><span>Flagship + transcript page</span></div>
+              <div class="check"><span>+2</span><span>YouTube Short A</span></div>
+              <div class="check"><span>+3</span><span>LinkedIn native clip A</span></div>
+              <div class="check"><span>+6</span><span>YouTube Short B</span></div>
+              <div class="check"><span>+7</span><span>LinkedIn native clip B</span></div>
+              <div class="check"><span>+9</span><span>LinkedIn framework carousel</span></div>
+            </div>
+          </article>
+        </div>
+        <div id="derivatives" class="grid two" style="margin-top:18px"></div>
+        <div class="action-row" style="margin-top:18px">
+          <a class="button gold" href="MUSIC-SHORTS-LINKEDIN-PLAYBOOK.md">Abrir playbook completo</a>
+          <a class="button" href="shorts-workflow.yaml">Ver workflow automático</a>
+        </div>
+      </section>
+
       <section id="course">
         <div class="section-head">
           <div><span class="eyebrow">Gated learning path</span><h2>Curso original AB-731.</h2></div>
@@ -341,9 +430,11 @@
               <tr><td>Descubrir</td><td>Demand researcher</td><td>Datos archivados y backlog puntuado</td><td>Aprobar tema</td></tr>
               <tr><td>Demostrar</td><td>Technical verifier</td><td>Claims ledger y demo repetible</td><td>Aprobar resultado</td></tr>
               <tr><td>Enseñar</td><td>Showrunner</td><td>Guion cámara/pantalla, slides y capítulos</td><td>Aprobar voz</td></tr>
+              <tr><td>Sonorizar</td><td>Music director</td><td>Cue-sheet, track, procedencia y mix notes</td><td>Aprobar música</td></tr>
               <tr><td>Producir</td><td>Visual + OpenMontage editor</td><td>Rough cut, gráficos, captions y master</td><td>Aprobar corte</td></tr>
+              <tr><td>Derivar</td><td>Derivative editor</td><td>Shorts, LinkedIn masters, captions y copy</td><td>Aprobar candidatos y clips</td></tr>
               <tr><td>Bloquear</td><td>Quality controller</td><td>Informe técnico, factual, visual y legal</td><td>Resolver bloqueos</td></tr>
-              <tr><td>Distribuir</td><td>YouTube + web publisher</td><td>Upload privado, página y recurso</td><td>Hacer público</td></tr>
+              <tr><td>Distribuir</td><td>YouTube + LinkedIn + web publisher</td><td>Uploads privados, página, recurso y UTM</td><td>Hacer público</td></tr>
               <tr><td>Aprender</td><td>Growth analyst</td><td>Notas 24h/7d/28d</td><td>Cambiar backlog</td></tr>
             </tbody>
           </table>
@@ -368,6 +459,7 @@
               <a class="button" href="video-001/checklist.html">Checklist imprimible</a>
               <a class="button" href="video-001/nurture-sequence.html">Nurture</a>
               <a class="button" href="video-001/manifest.yaml">Manifest</a>
+              <a class="button" href="shorts-workflow.yaml">Shorts workflow</a>
             </div>
           </article>
           <article class="card">
@@ -427,6 +519,11 @@
               <li><a href="https://support.google.com/youtube/answer/72851">YouTube Partner Program</a></li>
               <li><a href="https://support.google.com/youtube/answer/72431">Custom thumbnail guidance</a></li>
               <li><a href="https://support.google.com/youtube/answer/6388789">End-screen guidance</a></li>
+              <li><a href="https://support.google.com/youtube/answer/14075157">YouTube Related video for Shorts</a></li>
+              <li><a href="https://learn.microsoft.com/linkedin/marketing/community-management/shares/videos-api?view=li-lms-2026-08">LinkedIn Videos API</a></li>
+              <li><a href="https://github.com/ace-step/ACE-Step-1.5">ACE-Step 1.5</a></li>
+              <li><a href="https://github.com/ClipsAI/clipsai">ClipsAI</a></li>
+              <li><a href="https://github.com/WyattBlue/auto-editor">auto-editor</a></li>
             </ul>
           </article>
         </div>
@@ -457,7 +554,9 @@
       "Abrir el teleprompter y hacer una lectura cronometrada.",
       "Grabar cámara, pantalla, audio, room tone y sync.",
       "Mover originales a INBOX y conservarlos inmutables.",
+      "Aprobar cue-sheet y muestra musical antes del mix final.",
       "Activar edición OpenMontage hybrid y revisar rough cut.",
+      "Después del corte final, aprobar dos candidatos para Shorts y LinkedIn.",
     ];
     checks("monday-checks", monday, "monday");
     checks("preflight", v.preflight, "preflight");
@@ -475,6 +574,11 @@
     $("thumb-headline").textContent = v.thumbnail.headline;
     $("thumb-visual").textContent = v.thumbnail.visual;
     $("thumb-variants").innerHTML = v.thumbnail.variants.map(x => `<p class="callout">${x}</p>`).join("");
+    $("music-sound").textContent = v.music.sound;
+    $("music-generator").textContent = v.music.generator;
+    $("music-mix").textContent = v.music.mix;
+    $("music-cues").innerHTML = v.music.cues.map(c => `<tr><td><code>${c.range}</code></td><td><strong>${c.name}</strong></td><td>${c.treatment}</td></tr>`).join("");
+    $("derivatives").innerHTML = v.derivatives.map(d => `<article class="card"><span class="eyebrow">${d.id} · ${d.sourceRange}</span><h3>${d.title}</h3><p><strong>Hook:</strong> ${d.hook}</p><p>${d.lesson}</p><div class="callout"><strong>Edición:</strong> ${d.edit}</div><details><summary>Copy YouTube Short</summary><p>${d.youtubeDescription}</p><p><strong>CTA:</strong> ${d.youtubeCta}</p></details><details><summary>Copy LinkedIn</summary><p>${d.linkedinPost}</p></details></article>`).join("");
     $("chapters").innerHTML = v.chapters.map(([time, title]) => `<div class="chapter"><code>${time}</code><span>${title}</span></div>`).join("");
     $("slides").innerHTML = v.slides.map(s => `<details><summary>${s.id} · ${s.title}</summary><p>${s.visual}</p><div class="callout">${s.onScreen}</div></details>`).join("");
     $("demo-tests").innerHTML = v.demoTests.map((t, i) => `<details ${i === 0 ? "open" : ""}><summary>Prueba ${i + 1}</summary><p><strong>Prompt:</strong> ${t.prompt}</p><p><strong>Esperado:</strong> ${t.expected}</p></details>`).join("");

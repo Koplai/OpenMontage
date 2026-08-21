@@ -4,6 +4,8 @@ language: es-ES
 cadence:
   flagship_per_month: 2
   shorts_per_flagship: 2
+  linkedin_native_videos_per_flagship: 2
+  linkedin_documents_per_flagship: 1
   ab731_modules_per_month: 1
 
 states:
@@ -20,6 +22,9 @@ states:
   - approved_private_upload
   - scheduled
   - published
+  - derivatives_in_review
+  - derivatives_approved
+  - derivatives_published
   - analyzed
   - archived
 
@@ -28,6 +33,10 @@ human_gates:
   - demo_approval
   - script_approval
   - final_cut_approval
+  - music_approval
+  - derivative_candidate_approval
+  - derivative_final_approval
+  - linkedin_copy_approval
   - public_publish_approval
   - correction_or_takedown
 
@@ -56,12 +65,27 @@ agents:
     hard_rules:
       - "Text overflow is always blocking."
       - "Use the 2026 navy, Azure, and gold system."
+  music_director:
+    inputs: [approved_script, scene_timing, sonic_identity]
+    outputs: [music_prompt, cue_sheet, generated_track, provenance_record, mix_notes]
+    hard_rules:
+      - "Dialogue intelligibility always wins over musical continuity."
+      - "Use ACE-Step 1.5 as the primary generator; paid fallbacks require approval."
+      - "Record prompt, model version, seed, generation date, and human approval."
   editor:
     inputs: [immutable_recordings, manifest, assets]
     outputs: [rough_cut, final_master, captions, transcript]
     hard_rules:
       - "Use the OpenMontage hybrid pipeline."
       - "Never modify source recordings."
+  derivative_editor:
+    inputs: [approved_final_master, corrected_transcript, shorts_workflow, channel_kit]
+    outputs: [candidate_report, youtube_short_masters, linkedin_native_masters, corrected_srt, platform_copy]
+    hard_rules:
+      - "Automatic scoring proposes candidates; it never approves them."
+      - "Every derivative must teach one complete idea without distorting context."
+      - "Render 1080x1920 and treat caption or crop safe-area failures as blocking."
+      - "Do not expose tenant, customer, secret, notification, or personal data."
   quality_controller:
     inputs: [final_master, manifest, sources, landing_page]
     outputs: [blocking_report, publish_package]
@@ -73,6 +97,14 @@ agents:
     hard_rules:
       - "Never make a video public without human approval."
       - "Do not upload until CTA delivery works."
+      - "Attach the specific flagship through YouTube Related video for every Short."
+  linkedin_publisher:
+    inputs: [approved_linkedin_master, approved_post_copy, flagship_url, utm_contract]
+    outputs: [native_video_draft, caption_file, tracked_flagship_link]
+    hard_rules:
+      - "Upload video natively; do not substitute a YouTube link preview."
+      - "Link to the specific flagship or playlist, never a generic homepage."
+      - "Never publish without human approval."
   growth_analyst:
     inputs: [youtube_analytics, web_analytics, crm_attribution]
     outputs: [day_1_note, day_7_note, day_28_note, backlog_adjustments]
@@ -95,3 +127,8 @@ handoff:
     - lead_magnet
     - landing_page
     - manifest
+    - music_provenance
+    - youtube_short_masters
+    - linkedin_native_masters
+    - derivative_captions
+    - derivative_platform_copy

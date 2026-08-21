@@ -1,0 +1,116 @@
+schema_version: 1
+name: jp-youtube-derivative-engine
+language: es-ES
+reviewed_at: "2026-08-21"
+
+outputs_per_flagship:
+  youtube_shorts: 2
+  linkedin_native_videos: 2
+  linkedin_documents: 1
+
+format:
+  canvas: 1080x1920
+  aspect_ratio: "9:16"
+  codec: h264
+  audio_codec: aac
+  duration_target_seconds: [35, 75]
+  captions:
+    burned_in: true
+    corrected_srt: true
+    max_lines: 2
+  intro_ident_max_seconds: 0.5
+  end_card_seconds: [2, 3]
+
+stack:
+  transcript:
+    tool: openmontage_local_stt
+    implementation: faster-whisper
+    role: spanish_word_timestamps
+  candidate_scoring:
+    tool: local_ollama_compatible_llm
+    role: teaching_value_and_self_containment
+    output_candidates: [6, 10]
+  pause_cleanup:
+    tool: auto-editor
+    repository: https://github.com/WyattBlue/auto-editor
+    license: Unlicense
+    required: false
+  semantic_clipping:
+    tool: openclip
+    repository: https://github.com/linzzzzzz/openclip
+    license: MIT
+    required: false
+  speaker_reframe:
+    tool: clipsai
+    repository: https://github.com/ClipsAI/clipsai
+    license: MIT
+    upgrade_policy: pin_commit_and_regression_test
+  final_render:
+    tool: openmontage
+    engines: [ffmpeg, hyperframes]
+    role: brand_captions_safe_areas_and_delivery
+
+music:
+  primary_generator: ace_step_1_5
+  repository: https://github.com/ace-step/ACE-Step-1.5
+  license: MIT
+  default_bpm: 92
+  default_key: D_minor
+  vocals: false
+  under_dialogue_db: [-18, -14]
+  sidechain_ducking_db: [4, 8]
+  final_integrated_lufs: -14
+  final_true_peak_dbtp_max: -1
+  provenance_required: [prompt, model_version, seed, generated_at, human_approval]
+
+candidate_score:
+  immediate_hook: 20
+  complete_lesson: 25
+  practical_value: 20
+  self_contained_visuals: 15
+  factual_support: 10
+  flagship_funnel_fit: 10
+
+hard_reject:
+  - begins_mid_sentence
+  - missing_visual_context
+  - unsupported_claim
+  - sensitive_data_visible
+  - distorted_conclusion
+  - captions_outside_safe_area
+  - music_masks_speech
+
+human_gates:
+  - candidate_selection
+  - final_vertical_crop
+  - caption_approval
+  - platform_copy_approval
+  - public_publish_approval
+
+publishing:
+  youtube:
+    upload: native
+    related_video_required: true
+    visibility: private_until_human_approval
+  linkedin:
+    upload: native
+    captions_required: true
+    destination: specific_youtube_flagship
+    utm:
+      source: linkedin
+      medium: organic_video
+      campaign: per_flagship
+      content: per_derivative
+    visibility: draft_until_human_approval
+
+analytics:
+  review_windows_hours: [24, 168, 672]
+  metrics:
+    - short_average_percentage_viewed
+    - short_related_video_clicks
+    - linkedin_video_completion
+    - linkedin_saves
+    - linkedin_meaningful_comments
+    - linkedin_outbound_clicks
+    - attributed_flagship_sessions
+    - attributed_resource_opt_ins
