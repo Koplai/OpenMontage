@@ -1,0 +1,97 @@
+schema_version: 1
+name: jp-youtube-spanish-content-engine
+language: es-ES
+cadence:
+  flagship_per_month: 2
+  shorts_per_flagship: 2
+  ab731_modules_per_month: 1
+
+states:
+  - backlog
+  - researching
+  - topic_approved
+  - scripting
+  - demo_validated
+  - ready_to_record
+  - recorded
+  - editing
+  - qc_blocked
+  - human_review
+  - approved_private_upload
+  - scheduled
+  - published
+  - analyzed
+  - archived
+
+human_gates:
+  - topic_approval
+  - demo_approval
+  - script_approval
+  - final_cut_approval
+  - public_publish_approval
+  - correction_or_takedown
+
+agents:
+  demand_researcher:
+    inputs: [keyword_seeds, search_console, public_serps, product_updates, audience_questions]
+    outputs: [raw_research_archive, normalized_keywords, scored_backlog]
+    hard_rules:
+      - "No quantitative claim without dated source data."
+      - "Preserve raw API responses."
+  technical_verifier:
+    inputs: [approved_topic, official_sources, demo_tenant]
+    outputs: [claims_ledger, repeatable_demo, expected_failure_states]
+    hard_rules:
+      - "Use official sources for product behavior."
+      - "Never expose customer or production tenant data."
+  showrunner:
+    inputs: [research_pack, claims_ledger, demo]
+    outputs: [camera_script, screen_script, chapters, slide_cues, source_list]
+    hard_rules:
+      - "Worked example before abstraction."
+      - "Internal cues must never be spoken."
+  visual_producer:
+    inputs: [script, channel_kit]
+    outputs: [slides, diagrams, thumbnail_variants, overlays]
+    hard_rules:
+      - "Text overflow is always blocking."
+      - "Use the 2026 navy, Azure, and gold system."
+  editor:
+    inputs: [immutable_recordings, manifest, assets]
+    outputs: [rough_cut, final_master, captions, transcript]
+    hard_rules:
+      - "Use the OpenMontage hybrid pipeline."
+      - "Never modify source recordings."
+  quality_controller:
+    inputs: [final_master, manifest, sources, landing_page]
+    outputs: [blocking_report, publish_package]
+    hard_rules:
+      - "Do not waive factual, privacy, audio, caption, or layout failures."
+  youtube_publisher:
+    inputs: [approved_publish_package]
+    outputs: [private_upload, scheduled_metadata]
+    hard_rules:
+      - "Never make a video public without human approval."
+      - "Do not upload until CTA delivery works."
+  growth_analyst:
+    inputs: [youtube_analytics, web_analytics, crm_attribution]
+    outputs: [day_1_note, day_7_note, day_28_note, backlog_adjustments]
+    hard_rules:
+      - "Distinguish observations from causal conclusions."
+
+handoff:
+  capture_root: "OneDrive/2 - Areas/YouTube/Videos"
+  source_recordings_are_immutable: true
+  repository_engine: videos/jp-youtube-content-engine
+  openmontage_project_root: projects
+  required_publish_artifacts:
+    - final_master
+    - thumbnail
+    - captions
+    - transcript
+    - description
+    - chapters
+    - sources
+    - lead_magnet
+    - landing_page
+    - manifest

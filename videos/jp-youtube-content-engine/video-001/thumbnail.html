@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1280, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Thumbnail · VID-001</title>
+  <style>
+    @font-face { font-family:Satoshi; src:url("../../jp-youtube-channel-kit/assets/satoshi-500.woff2") format("woff2"); font-weight:500; }
+    @font-face { font-family:Satoshi; src:url("../../jp-youtube-channel-kit/assets/satoshi-700.woff2") format("woff2"); font-weight:700; }
+    @font-face { font-family:Satoshi; src:url("../../jp-youtube-channel-kit/assets/satoshi-900.woff2") format("woff2"); font-weight:900; }
+    * { box-sizing:border-box; }
+    html,body { width:1280px; height:720px; margin:0; overflow:hidden; }
+    body { font-family:Satoshi,Arial,sans-serif; color:#f3f9ff; background:#0a1628; }
+    main {
+      position:relative; width:1280px; height:720px; overflow:hidden;
+      background:
+        radial-gradient(circle at 92% 15%, rgba(74,144,226,.3), transparent 390px),
+        linear-gradient(145deg,#0a1628,#111f34);
+    }
+    main::before { content:""; position:absolute; left:0; top:0; bottom:0; width:12px; background:linear-gradient(#c4a35a,#4a90e2); }
+    .copy { position:absolute; z-index:3; left:78px; top:70px; width:685px; }
+    .eyebrow { display:flex; align-items:center; gap:12px; color:#c4a35a; font-size:22px; font-weight:700; letter-spacing:.17em; }
+    .eyebrow i { width:13px; height:13px; background:#f07474; border-radius:50%; border:3px solid rgba(255,255,255,.23); }
+    h1 { margin:29px 0 0; font-size:112px; line-height:.86; letter-spacing:-.065em; font-weight:900; }
+    h1 span { color:#4a90e2; }
+    .rule { margin-top:28px; width:130px; height:7px; background:#c4a35a; border-radius:5px; }
+    .sub { margin-top:18px; font-size:27px; color:#becce0; font-weight:700; }
+    .portrait {
+      position:absolute; z-index:2; right:10px; bottom:-6px; width:480px; height:700px;
+      overflow:hidden; border-radius:190px 0 0 0; border-left:1px solid rgba(255,255,255,.1);
+      background:#131e2e;
+    }
+    .portrait img { width:100%; height:100%; object-fit:cover; object-position:center 16%; filter:saturate(.9) contrast(1.03); }
+    .portrait::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,rgba(10,22,40,.32),transparent 38%),linear-gradient(0deg,rgba(10,22,40,.28),transparent 48%); }
+    .risk-card {
+      position:absolute; z-index:4; right:356px; bottom:51px; width:220px; height:92px;
+      display:flex; align-items:center; gap:13px; padding:17px 20px; border-radius:18px;
+      background:rgba(8,18,32,.92); border:1px solid rgba(196,163,90,.42); box-shadow:0 18px 40px rgba(0,0,0,.3);
+    }
+    .risk-card strong { color:#c4a35a; font-size:51px; line-height:1; }
+    .risk-card span { font-size:16px; line-height:1.05; text-transform:uppercase; letter-spacing:.06em; }
+    .brand { position:absolute; z-index:5; right:34px; top:27px; padding:8px 12px; border-radius:9px; color:#c4a35a; background:rgba(10,22,40,.82); font-size:15px; font-weight:900; letter-spacing:.05em; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="copy">
+      <div class="eyebrow"><i></i>COPILOT STUDIO</div>
+      <h1>NO LO<br><span>PUBLIQUES</span></h1>
+      <div class="rule"></div>
+      <div class="sub">Sin comprobar estos controles</div>
+    </div>
+    <div class="portrait"><img src="../../jp-youtube-channel-kit/assets/profile-photo.png" alt=""></div>
+    <div class="risk-card"><strong>5</strong><span>controles<br>críticos</span></div>
+    <div class="brand">JUAN PEDRO MÁRQUEZ</div>
+  </main>
+</body>
+</html>

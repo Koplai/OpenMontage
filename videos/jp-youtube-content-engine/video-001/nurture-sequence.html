@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Secuencia de emails · VID-001</title>
+  <style>
+    :root { --navy:#0a1628; --azure:#4a90e2; --gold:#c4a35a; --ink:#f5f8fc; --muted:#aebbd0; --line:rgba(255,255,255,.12); }
+    *{box-sizing:border-box}body{margin:0;color:var(--ink);background:radial-gradient(circle at 85% 0,rgba(74,144,226,.22),transparent 35rem),var(--navy);font-family:Inter,system-ui,sans-serif;line-height:1.6}
+    main{width:min(980px,calc(100% - 32px));margin:auto;padding:70px 0 100px}.eyebrow{color:var(--gold);font:700 11px monospace;letter-spacing:.15em;text-transform:uppercase}h1{font-family:Satoshi,Inter,sans-serif;font-size:clamp(42px,7vw,82px);line-height:1;letter-spacing:-.045em;margin:15px 0}p{color:var(--muted)}
+    .warning{margin:28px 0;padding:16px;border:1px solid rgba(196,163,90,.4);border-radius:14px;background:rgba(196,163,90,.08);color:#f3e5c4}
+    article{margin:18px 0;border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.045);overflow:hidden}
+    header{display:grid;grid-template-columns:110px 1fr;gap:18px;padding:20px 24px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--line)}
+    header b{color:var(--gold);font:700 12px monospace}h2{font-size:25px;margin:0;line-height:1.15}.mail{padding:26px 30px;white-space:pre-line;color:#e3eaf4}.meta{display:grid;grid-template-columns:120px 1fr;gap:8px;margin-bottom:20px;font-size:13px}.meta span:nth-child(odd){color:var(--gold);font-family:monospace}.meta span:nth-child(even){color:white}
+    @media(max-width:650px){header{grid-template-columns:1fr}.mail{padding:20px}.meta{grid-template-columns:1fr}.meta span:nth-child(odd){margin-top:9px}}
+  </style>
+</head>
+<body>
+  <main>
+    <span class="eyebrow">VID-001 · Lead nurture</span>
+    <h1>Cinco emails para convertir descarga en aplicación.</h1>
+    <p>La secuencia enseña antes de pedir. Sustituye los marcadores solo cuando las páginas y enlaces estén activos.</p>
+    <div class="warning"><strong>Bloqueo:</strong> no activar hasta que <code>{{RESOURCE_URL}}</code>, <code>{{VIDEO_URL}}</code> y <code>{{ASSESSMENT_URL}}</code> funcionen y el consentimiento esté registrado.</div>
+
+    <article>
+      <header><b>DÍA 0</b><h2>Entrega + pregunta de diagnóstico</h2></header>
+      <div class="mail"><div class="meta"><span>ASUNTO</span><span>Tu checklist de Copilot Studio está aquí</span><span>PREHEADER</span><span>Cinco controles para decidir si tu agente está listo.</span></div>Hola {{first_name}},
+
+Aquí tienes el checklist de producción para agentes de Copilot Studio:
+
+{{RESOURCE_URL}}
+
+No intentes completarlo de memoria. Elige un agente real y busca una evidencia para cada control: entorno, datos, identidad, pruebas y operación.
+
+Si una respuesta crítica es “no sé”, has encontrado trabajo importante antes de publicar.
+
+¿Cuál de los cinco controles te resulta más difícil demostrar? Responde con una palabra: entorno, datos, identidad, pruebas u operación.
+
+Juan Pedro
+
+Claro. Directo. Con rigor.</div>
+    </article>
+
+    <article>
+      <header><b>DÍA 1</b><h2>Aplicación de diez minutos</h2></header>
+      <div class="mail"><div class="meta"><span>ASUNTO</span><span>La prueba de 10 minutos que haría hoy</span><span>PREHEADER</span><span>No empieces por el prompt.</span></div>Hola {{first_name}},
+
+Abre tu agente y dedica diez minutos a una sola pregunta:
+
+“¿Cuál es la acción más peligrosa que este agente podría intentar?”
+
+Ahora escribe tres casos:
+
+1. Una petición normal que debe completar.
+2. Una petición que debe rechazar.
+3. Una petición que intenta elevar permisos solo con texto.
+
+Para cada caso, define el resultado esperado antes de ejecutarlo. Después guarda el resultado real.
+
+Ese pequeño conjunto es más valioso que veinte preguntas improvisadas porque puede repetirse después de cada cambio.
+
+El vídeo completo muestra cómo lo hago con un asistente de incorporación:
+{{VIDEO_URL}}
+
+Juan Pedro</div>
+    </article>
+
+    <article>
+      <header><b>DÍA 3</b><h2>Diagnóstico: identidad no es autorización</h2></header>
+      <div class="mail"><div class="meta"><span>ASUNTO</span><span>El error de seguridad que parece una función</span><span>PREHEADER</span><span>Iniciar sesión no concede permiso para actuar.</span></div>Hola {{first_name}},
+
+Un agente puede saber quién eres y seguir sin tener permiso para cambiar un sistema.
+
+Antes de añadir una acción, dibuja cuatro cajas:
+
+Usuario → Agente → Conexión/credencial → Sistema de destino
+
+Debajo de cada caja responde:
+
+• ¿Qué identidad utiliza?
+• ¿Qué puede leer?
+• ¿Qué puede escribir?
+• ¿Dónde queda el registro?
+
+Si las respuestas están mezcladas, todavía no tienes un modelo de autorización; tienes una suposición.
+
+Vuelve al control 3 del checklist y documenta esas cuatro cajas. Te servirá también para explicarlo a seguridad y negocio.
+
+Juan Pedro</div>
+    </article>
+
+    <article>
+      <header><b>DÍA 6</b><h2>Extensión: escoger la plataforma</h2></header>
+      <div class="mail"><div class="meta"><span>ASUNTO</span><span>Copilot Studio o Foundry: la pregunta correcta</span><span>PREHEADER</span><span>No decidas por la demo más bonita.</span></div>Hola {{first_name}},
+
+La siguiente decisión suele llegar demasiado tarde:
+
+“¿Este caso debería vivir en Copilot Studio o necesita Microsoft Foundry?”
+
+La respuesta no depende solo del modelo. Depende de experiencia de usuario, integración, control, evaluación, operación, identidad y equipo responsable.
+
+Estoy preparando una matriz de decisión con un mismo escenario implementado desde ambos lados. Cuando esté publicada, la encontrarás aquí:
+
+{{NEXT_VIDEO_URL}}
+
+Mientras tanto, añade al checklist una última línea: “La plataforma elegida coincide con el nivel de control y operación que exige el caso”.
+
+Juan Pedro</div>
+    </article>
+
+    <article>
+      <header><b>DÍA 10</b><h2>Siguiente paso cualificado</h2></header>
+      <div class="mail"><div class="meta"><span>ASUNTO</span><span>¿Tienes un agente o un sistema de agentes?</span><span>PREHEADER</span><span>Evalúa el siguiente nivel de madurez.</span></div>Hola {{first_name}},
+
+Un checklist decide si una versión puede publicarse. Un operating model decide si la organización puede repetir el resultado en diez, cincuenta o cien agentes.
+
+Si ya tienes varios casos, completa la evaluación de madurez:
+
+{{ASSESSMENT_URL}}
+
+Te ayudará a separar cuatro problemas distintos: valor, datos, plataforma y adopción. A partir de ahí podrás priorizar el siguiente control en lugar de abrir otro piloto.
+
+Si quieres, responde a este email con el número de agentes que ya tienes en prueba o producción. Leo personalmente las respuestas que describen un caso concreto.
+
+Juan Pedro
+
+Contenido educativo. Valida las decisiones con tus responsables de seguridad, privacidad, cumplimiento y negocio.</div>
+    </article>
+  </main>
+</body>
+</html>

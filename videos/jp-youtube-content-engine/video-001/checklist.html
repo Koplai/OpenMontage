@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Checklist · Agente de Copilot Studio en producción</title>
+  <style>
+    :root { --navy:#0a1628; --azure:#4a90e2; --gold:#c4a35a; --ink:#162238; --muted:#526178; --line:#dfe5ed; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#edf1f6; color:var(--ink); font-family:Inter, Arial, sans-serif; line-height:1.42; }
+    .tools { position:sticky; top:0; z-index:4; padding:12px; text-align:center; background:var(--navy); }
+    button { border:0; border-radius:9px; background:var(--gold); color:var(--navy); padding:11px 17px; font-weight:800; cursor:pointer; }
+    .page { width:209mm; min-height:296mm; margin:20px auto; padding:15mm; background:white; box-shadow:0 18px 70px rgba(10,22,40,.15); }
+    .topline { height:5px; background:linear-gradient(90deg,var(--gold),var(--azure)); margin:-15mm -15mm 12mm; }
+    .eyebrow { color:var(--gold); text-transform:uppercase; letter-spacing:.15em; font:700 10px monospace; }
+    h1 { margin:10px 0 8px; font-size:35px; line-height:1.05; letter-spacing:-.04em; color:var(--navy); }
+    h2 { margin:18px 0 8px; font-size:18px; color:var(--navy); border-bottom:2px solid var(--azure); padding-bottom:6px; }
+    p { color:var(--muted); }
+    .meta { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:20px 0; }
+    .field { border-bottom:1px solid var(--ink); min-height:30px; font-size:12px; color:var(--muted); }
+    .items { display:grid; gap:7px; }
+    .item { display:grid; grid-template-columns:18px 1fr 28mm; gap:9px; align-items:start; font-size:11px; border-bottom:1px solid var(--line); padding:5px 0; }
+    .box { width:15px; height:15px; border:1.5px solid var(--navy); border-radius:3px; }
+    .evidence { color:#7b8798; font-size:9px; text-transform:uppercase; letter-spacing:.08em; border-bottom:1px dotted #8390a2; min-height:16px; }
+    .test { border:1px solid var(--line); border-top:3px solid var(--azure); padding:8px; margin:6px 0; font-size:10px; break-inside:avoid; }
+    .test strong { color:var(--navy); }
+    .decision { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:14px; }
+    .decision div { border:2px solid var(--line); padding:13px; min-height:70px; font-weight:800; }
+    .decision div:first-child { border-color:#4fa77f; }
+    .decision div:nth-child(2) { border-color:var(--gold); }
+    .decision div:last-child { border-color:#db6d6d; }
+    .footer { display:flex; justify-content:space-between; margin-top:22px; color:#7b8798; font:9px monospace; }
+    .page:first-of-type h1 { font-size:31px; }
+    .page:first-of-type h2 { margin:12px 0 5px; font-size:16px; padding-bottom:4px; }
+    .page:first-of-type .meta { margin:13px 0; }
+    .page:first-of-type .item { font-size:10px; padding:3px 0; }
+    .page:first-of-type .items { gap:4px; }
+    .page:first-of-type .footer { margin-top:13px; }
+    @page { size:A4; margin:0; }
+    @media print {
+      body { background:white; }
+      .tools { display:none; }
+      .page { margin:0; box-shadow:none; page-break-after:always; }
+      .page:last-child { page-break-after:auto; }
+    }
+    @media(max-width:850px) {
+      .page { width:100%; min-height:0; margin:0; padding:24px; }
+      .topline { margin:-24px -24px 24px; }
+      .meta,.decision { grid-template-columns:1fr; }
+      .item { grid-template-columns:18px 1fr; }
+      .evidence { grid-column:2; }
+    }
+  </style>
+</head>
+<body>
+  <div class="tools"><button onclick="window.print()">Imprimir / Guardar como PDF</button></div>
+  <section class="page">
+    <div class="topline"></div>
+    <span class="eyebrow">Juan Pedro Marquez · Production readiness</span>
+    <h1>¿Está tu agente de Copilot Studio listo para producción?</h1>
+    <p>Cinco controles con evidencia. Si una respuesta crítica es “no sé”, el agente todavía no está listo.</p>
+    <div class="meta">
+      <div class="field">Agente:</div><div class="field">Versión:</div>
+      <div class="field">Propietario:</div><div class="field">Fecha:</div>
+    </div>
+    <h2>1 · Entorno y propiedad</h2>
+    <div class="items">
+      <div class="item"><i class="box"></i><span>El agente vive en el entorno correcto para su riesgo y audiencia.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>DEV, TEST y PROD tienen propósito, acceso y cambios diferenciados.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>Propietario técnico, propietario de negocio y sustituto están identificados.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>El agente y sus dependencias están dentro de una solución administrable.</span><i class="evidence">Evidencia</i></div>
+    </div>
+    <h2>2 · Datos y capacidades</h2>
+    <div class="items">
+      <div class="item"><i class="box"></i><span>Las fuentes de conocimiento autorizadas están inventariadas.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>Las directivas de datos cubren conocimiento, acciones, conectores, HTTP y canales.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>Existe una prueba de capacidad permitida y otra de capacidad bloqueada.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>El agente distingue hechos fundamentados, incertidumbre y límites.</span><i class="evidence">Evidencia</i></div>
+    </div>
+    <h2>3 · Identidad y permisos</h2>
+    <div class="items">
+      <div class="item"><i class="box"></i><span>Está documentada la identidad de usuario, agente/conexión y sistema de destino.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>Las acciones aplican mínimo privilegio y separan lectura de escritura.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>Los cambios sensibles requieren confirmación y quedan registrados.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>Un usuario sin permiso no obtiene acceso por declararse administrador en el chat.</span><i class="evidence">Evidencia</i></div>
+    </div>
+    <div class="footer"><span>jpmarquez.com</span><span>Claro. Directo. Con rigor.</span><span>1 / 3</span></div>
+  </section>
+  <section class="page">
+    <div class="topline"></div>
+    <span class="eyebrow">Pruebas · Operación · Decisión</span>
+    <h2>4 · Pruebas de límites y abuso</h2>
+    <div id="tests"></div>
+    <div class="items">
+      <div class="item"><i class="box"></i><span>Cada prueba conserva prompt, resultado esperado, resultado real y evidencia.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>El conjunto completo se repite después de cambiar instrucciones, conocimiento o herramientas.</span><i class="evidence">Evidencia</i></div>
+    </div>
+    <div class="footer"><span>jpmarquez.com</span><span>Claro. Directo. Con rigor.</span><span>2 / 3</span></div>
+  </section>
+  <section class="page">
+    <div class="topline"></div>
+    <span class="eyebrow">Operación · Evidencia · Decisión</span>
+    <h2>5 · ALM, observabilidad y reversión</h2>
+    <div class="items">
+      <div class="item"><i class="box"></i><span>La versión desplegada puede identificarse y reproducirse.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>El flujo DEV → TEST → PROD tiene aprobación e historial.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>Advertencias y hallazgos de seguridad tienen resolución o aceptación explícita.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>Errores, respuestas sin fundamento, denegaciones, consumo y latencia pueden observarse.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>Existe un umbral para pausar y un procedimiento probado de reversión.</span><i class="evidence">Evidencia</i></div>
+      <div class="item"><i class="box"></i><span>Los usuarios pueden informar de respuestas incorrectas o riesgosas.</span><i class="evidence">Evidencia</i></div>
+    </div>
+    <h2>Decisión de publicación</h2>
+    <div class="decision">
+      <div>□ PUBLICAR<br><small>5/5 controles con evidencia</small></div>
+      <div>□ CORREGIR<br><small>Brechas con propietario y fecha</small></div>
+      <div>□ DETENER<br><small>Riesgo crítico o resultado no reproducible</small></div>
+    </div>
+    <div class="meta" style="margin-top:24px">
+      <div class="field">Aprobación negocio:</div><div class="field">Aprobación técnica:</div>
+      <div class="field">Fecha de revisión:</div><div class="field">Próxima revisión:</div>
+    </div>
+    <p style="font-size:10px">Material educativo. Valida cada configuración en tu tenant, con tus responsables de seguridad, privacidad, cumplimiento y negocio. Producto e interfaz pueden cambiar; consulta siempre la documentación oficial.</p>
+    <div class="footer"><span>jpmarquez.com</span><span>Claro. Directo. Con rigor.</span><span>3 / 3</span></div>
+  </section>
+  <script src="production-data.js"></script>
+  <script>
+    document.getElementById("tests").innerHTML = window.JP_VIDEO_001.demoTests.map((t, i) =>
+      `<div class="test"><strong>${i + 1}. ${t.prompt}</strong><br><span>Esperado: ${t.expected}</span></div>`
+    ).join("");
+  </script>
+</body>
+</html>

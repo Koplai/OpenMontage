@@ -1,0 +1,97 @@
+schema_version: 1
+video:
+  id: VID-001
+  slug: copilot-studio-produccion-5-controles
+  language: es-ES
+  pipeline: hybrid
+  status: ready_for_demo_validation
+  owner: Juan Pedro Marquez
+  target_publish_at: "2026-08-27T17:00:00+02:00"
+  duration_target_minutes: 12
+  title: "Copilot Studio en produccion: 5 controles antes de publicar un agente"
+  playlist: "Copilot Studio: de demo a produccion"
+
+promise:
+  audience: "Power Platform admins, architects, advanced makers, and AI leaders"
+  outcome: "A repeatable go/no-go production readiness review"
+  practical_artifact: "Copilot Studio production readiness checklist"
+
+research:
+  primary_keyword: copilot studio produccion
+  locale: es-ES
+  location: Spain
+  quantitative_status: pending_dataforseo_credentials
+  rule: "Do not publish demand numbers until the monthly DataForSEO job succeeds."
+  official_sources:
+    - https://learn.microsoft.com/microsoft-copilot-studio/security-and-governance
+    - https://learn.microsoft.com/microsoft-copilot-studio/admin-data-loss-prevention
+    - https://learn.microsoft.com/microsoft-copilot-studio/guidance/alm
+    - https://learn.microsoft.com/microsoft-copilot-studio/authoring-solutions-overview
+    - https://learn.microsoft.com/microsoft-copilot-studio/guidance/kit-automate-test-deploy
+    - https://microsoft.github.io/mcs-labs/labs/mcs-governance/
+
+recording:
+  camera: 4k_or_1440p
+  screen: 1440p_or_higher
+  audio: wav_48khz_24bit_preferred
+  teleprompter: Elgato
+  source_folder: "OneDrive/2 - Areas/YouTube/Videos/VID-001-copilot-studio-produccion"
+  intake_names:
+    - VID-001_A_CAM_TAKE01.mp4
+    - VID-001_B_SCREEN_TAKE01.mp4
+    - VID-001_C_AUDIO_TAKE01.wav
+    - VID-001_D_ROOMTONE.wav
+  privacy: "No customer data, real secrets, private notifications, or identifiable tenant names."
+
+editing:
+  project_workspace: projects/vid-001-copilot-studio-produccion
+  preserve_originals: true
+  identity_kit: videos/jp-youtube-channel-kit
+  intro_max_seconds: 3
+  lower_third_max_uses: 2
+  end_screen_reserved_seconds: 20
+  captions_required: true
+  transcript_required: true
+
+quality_gates:
+  - id: research
+    owner: content_strategist
+    approval: human
+  - id: demo
+    owner: technical_verifier
+    approval: human
+  - id: script
+    owner: showrunner
+    approval: human
+  - id: rough_cut
+    owner: editor
+    approval: human
+  - id: final_qc
+    owner: quality_controller
+    approval: human
+  - id: publish
+    owner: youtube_publisher
+    approval: human
+
+publishing:
+  resource_url: https://jpmarquez.com/es/recursos/checklist-copilot-studio-produccion/
+  block_if_resource_url_is_unavailable: true
+  utm:
+    source: youtube
+    medium: video
+    campaign: copilot_studio_produccion
+    content: vid001_description
+  visibility: private_until_human_approval
+  comments: held_for_review_first_24h
+
+analytics:
+  review_windows_hours: [24, 168, 672]
+  metrics:
+    - impressions_click_through_rate
+    - first_30_second_retention
+    - average_percentage_viewed
+    - end_screen_element_click_rate
+    - resource_clicks
+    - resource_opt_ins
+    - assessment_starts
+    - qualified_conversations

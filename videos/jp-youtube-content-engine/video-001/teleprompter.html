@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Teleprompter · VID-001</title>
+  <style>
+    :root { --navy:#050b14; --azure:#4a90e2; --gold:#c4a35a; --text:#f9fbff; --muted:#7690b2; --font:52px; }
+    * { box-sizing:border-box; }
+    html, body { margin:0; min-height:100%; background:var(--navy); color:var(--text); font-family:Inter, Arial, sans-serif; }
+    body.mirror .stage { transform:scaleX(-1); }
+    body.hide-cues .cue { display:none; }
+    .controls {
+      position:fixed; inset:16px 16px auto 16px; z-index:10; display:flex; gap:8px; flex-wrap:wrap;
+      padding:10px; background:rgba(8,19,34,.88); border:1px solid rgba(255,255,255,.14);
+      border-radius:14px; backdrop-filter:blur(16px); transition:.2s;
+    }
+    body.running .controls { opacity:.12; }
+    body.running .controls:hover { opacity:1; }
+    button, label {
+      color:white; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12);
+      border-radius:10px; padding:10px 13px; font:600 13px Inter, sans-serif;
+    }
+    button { cursor:pointer; }
+    button.primary { background:var(--azure); }
+    label { display:flex; align-items:center; gap:8px; color:#c7d2e1; }
+    input[type="range"] { width:120px; accent-color:var(--gold); }
+    .read-line {
+      position:fixed; z-index:5; left:0; right:0; top:45vh; height:2px;
+      background:linear-gradient(90deg, transparent 2%, var(--gold) 12%, var(--gold) 88%, transparent 98%);
+      opacity:.45; pointer-events:none;
+    }
+    .read-line::before, .read-line::after {
+      content:""; position:absolute; top:-4px; width:10px; height:10px; border-radius:50%; background:var(--gold);
+    }
+    .read-line::before { left:12px; }
+    .read-line::after { right:12px; }
+    .stage {
+      width:min(1120px, 88vw); margin:0 auto; padding:44vh 0 62vh;
+      font-size:var(--font); line-height:1.34; letter-spacing:-.025em; transition:transform .2s;
+    }
+    .segment { margin:0 0 1.55em; }
+    .segment p { margin:0; }
+    .cue {
+      display:flex; gap:14px; align-items:center; margin-bottom:14px; color:var(--gold);
+      font:700 14px "Space Mono", monospace; text-transform:uppercase; letter-spacing:.08em;
+    }
+    .cue .kind { color:var(--azure); }
+    .cue .time { color:var(--muted); }
+    .help { position:fixed; right:18px; bottom:14px; z-index:8; color:var(--muted); font:12px monospace; }
+    @media (max-width:700px) { :root { --font:34px; } .stage{width:90vw}.controls{position:absolute}.help{display:none} }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <button class="primary" id="toggle">▶ Iniciar</button>
+    <button id="top">↥ Inicio</button>
+    <label>Velocidad <input id="speed" type="range" min="5" max="120" value="34"><span id="speedOut">34</span></label>
+    <label>Texto <input id="font" type="range" min="30" max="90" value="52"><span id="fontOut">52</span></label>
+    <button id="mirror">Espejo</button>
+    <button id="cues">Ocultar cues</button>
+    <button id="full">Pantalla completa</button>
+  </div>
+  <div class="read-line"></div>
+  <main class="stage" id="stage"></main>
+  <div class="help">SPACE play/pause · ↑↓ velocidad · ←→ salto · M espejo · C cues · F full</div>
+  <script src="production-data.js"></script>
+  <script>
+    const v = window.JP_VIDEO_001;
+    const stage = document.getElementById("stage");
+    const toggle = document.getElementById("toggle");
+    const speed = document.getElementById("speed");
+    const font = document.getElementById("font");
+    let running = false;
+    let last = 0;
+    let remainder = 0;
+
+    stage.innerHTML = v.transcript.map(t => `
+      <section class="segment" data-at="${t.at}">
+        <div class="cue"><span class="time">${t.at}</span><span class="kind">${t.kind}</span><span>${t.cue}</span></div>
+        <p>${t.text}</p>
+      </section>`).join("");
+
+    function setRunning(value) {
+      running = value;
+      document.body.classList.toggle("running", running);
+      toggle.textContent = running ? "Ⅱ Pausar" : "▶ Iniciar";
+      if (running) requestAnimationFrame(step);
+    }
+    function step(now) {
+      if (!running) return;
+      if (!last) last = now;
+      const delta = Math.min(48, now - last);
+      last = now;
+      remainder += Number(speed.value) * delta / 1000;
+      const distance = Math.floor(remainder);
+      if (distance > 0) {
+        window.scrollBy(0, distance);
+        remainder -= distance;
+      }
+      if (window.scrollY + innerHeight >= document.documentElement.scrollHeight - 3) setRunning(false);
+      else requestAnimationFrame(step);
+    }
+    function bump(delta) {
+      speed.value = Math.max(speed.min, Math.min(speed.max, Number(speed.value) + delta));
+      document.getElementById("speedOut").textContent = speed.value;
+    }
+    toggle.onclick = () => { last = 0; setRunning(!running); };
+    document.getElementById("top").onclick = () => { setRunning(false); scrollTo({top:0, behavior:"smooth"}); };
+    speed.oninput = () => document.getElementById("speedOut").textContent = speed.value;
+    font.oninput = () => {
+      document.documentElement.style.setProperty("--font", `${font.value}px`);
+      document.getElementById("fontOut").textContent = font.value;
+    };
+    document.getElementById("mirror").onclick = () => document.body.classList.toggle("mirror");
+    document.getElementById("cues").onclick = () => document.body.classList.toggle("hide-cues");
+    document.getElementById("full").onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    document.addEventListener("keydown", event => {
+      if (event.target.matches("input")) return;
+      if (event.code === "Space") { event.preventDefault(); toggle.click(); }
+      if (event.key === "ArrowUp") bump(4);
+      if (event.key === "ArrowDown") bump(-4);
+      if (event.key === "ArrowRight") scrollBy({top:innerHeight*.65, behavior:"smooth"});
+      if (event.key === "ArrowLeft") scrollBy({top:-innerHeight*.65, behavior:"smooth"});
+      if (event.key.toLowerCase() === "m") document.getElementById("mirror").click();
+      if (event.key.toLowerCase() === "c") document.getElementById("cues").click();
+      if (event.key.toLowerCase() === "f") document.getElementById("full").click();
+    });
+  </script>
+</body>
+</html>

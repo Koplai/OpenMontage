@@ -1,0 +1,18 @@
+cluster,seed_keyword,intent,funnel_stage,locale,location,status
+copilot-studio-production,copilot studio produccion,problem-solution,consideration,es-ES,Spain,pending_credentials
+copilot-studio-production,copilot studio seguridad,problem-solution,consideration,es-ES,Spain,pending_credentials
+copilot-studio-production,gobernanza copilot studio,problem-solution,consideration,es-ES,Spain,pending_credentials
+copilot-studio-production,dlp copilot studio,technical,consideration,es-ES,Spain,pending_credentials
+copilot-studio-production,publicar agente copilot studio,how-to,consideration,es-ES,Spain,pending_credentials
+copilot-studio-production,alm copilot studio,technical,decision,es-ES,Spain,pending_credentials
+agent-architecture,copilot studio vs azure ai foundry,comparison,decision,es-ES,Spain,pending_credentials
+agent-architecture,microsoft foundry tutorial espanol,how-to,awareness,es-ES,Spain,pending_credentials
+agent-governance,gobernanza agentes ia microsoft,problem-solution,consideration,es-ES,Spain,pending_credentials
+agent-governance,seguridad agentes ia empresa,problem-solution,consideration,es-ES,Spain,pending_credentials
+power-platform-admin,power platform admin center tutorial,how-to,awareness,es-ES,Spain,pending_credentials
+power-platform-admin,entornos power platform buenas practicas,how-to,consideration,es-ES,Spain,pending_credentials
+m365-copilot,microsoft 365 copilot roi,commercial,decision,es-ES,Spain,pending_credentials
+m365-copilot,adopcion microsoft 365 copilot,problem-solution,consideration,es-ES,Spain,pending_credentials
+ab731,ab-731 espanol,credential,consideration,es-ES,Spain,pending_credentials
+ab731,ai transformation leader microsoft,credential,consideration,es-ES,Spain,pending_credentials
+ab731,transformacion ia empresa estrategia,problem-solution,awareness,es-ES,Spain,pending_credentials
