@@ -61,11 +61,12 @@ npm run render
 
 ### Estáticos
 
-`static/` contiene 32 fuentes HTML editables y 32 PNG:
+`static/` contiene fuentes HTML editables y sus exportaciones PNG:
 
 - 6 miniaturas en tres familias, ES/EN.
 - 2 banners de canal, ES/EN.
 - 1 avatar monograma.
+- 1 watermark JP transparente.
 - 4 overlays transparentes, ES/EN.
 - 8 separadores de capítulo, cuatro temas en ES/EN.
 - 8 diagramas técnicos, cuatro sistemas en ES/EN.
@@ -106,6 +107,13 @@ repetirla bajo narración.
 4. Usar capítulos solo cuando cambie la pregunta, no como decoración.
 5. Cerrar con una regla de decisión o acción concreta.
 6. Reservar los últimos 20 segundos para la end screen.
+7. Incluir `static/overlays/watermark-jp.png` en todos los vídeos. Mantenerlo en
+   la esquina superior derecha durante el cuerpo editorial, al 40–55% de
+   opacidad. Puede ocultarse durante el ident o la end screen cuando el monograma
+   ya esté integrado en la composición.
+8. Si el watermark colisiona con subtítulos, UI o una llamada de evidencia,
+   mover temporalmente ese elemento; no reducir el margen de seguridad ni tapar
+   información.
 
 ### Localización
 
@@ -113,8 +121,8 @@ repetirla bajo narración.
 - Mantener la misma estructura visual entre versiones.
 - Localizar el texto, no traducirlo palabra por palabra.
 - Mantener nombres de producto (`Copilot`, `Entra ID`, `Foundry`) y `ROI`.
-- Copy de cierre aprobado: **“Claro. Directo. Con rigor.”**
-- English closing copy: **“Calm. Direct. Defensible.”**
+- No usar un eslogan fijo. Cerrar cada episodio con una decisión, regla o acción
+  específica para ese contenido.
 
 ## Quality control obligatorio
 

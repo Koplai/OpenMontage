@@ -9,8 +9,9 @@
       html,
       body {
         width: auto;
+        height: auto;
         min-height: 100%;
-        overflow: auto;
+        overflow: visible;
         background: #eef5fc;
         color: #131e2e;
       }
@@ -179,6 +180,112 @@
         border: 2px solid rgba(74, 144, 226, 0.45);
       }
 
+      .jump-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      .jump-nav a {
+        padding: 9px 14px;
+        border: 1px solid rgba(74, 144, 226, 0.22);
+        border-radius: 999px;
+        background: #fff;
+        color: #0a1628;
+        font-size: 14px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .asset-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .asset-grid.three-up {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .asset {
+        overflow: hidden;
+        border: 1px solid rgba(19, 30, 46, 0.1);
+        border-radius: 20px;
+        background: #f3f9ff;
+      }
+
+      .asset img {
+        display: block;
+        width: 100%;
+      }
+
+      .asset figcaption {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 12px 14px;
+        color: #47607d;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .asset figcaption strong {
+        color: #131e2e;
+      }
+
+      .transparent-stage,
+      .screen-stage {
+        position: relative;
+        min-height: 290px;
+        overflow: hidden;
+        background-color: #eaf2fc;
+        background-image:
+          linear-gradient(45deg, rgba(71, 96, 125, 0.1) 25%, transparent 25%),
+          linear-gradient(-45deg, rgba(71, 96, 125, 0.1) 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, rgba(71, 96, 125, 0.1) 75%),
+          linear-gradient(-45deg, transparent 75%, rgba(71, 96, 125, 0.1) 75%);
+        background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+        background-size: 24px 24px;
+      }
+
+      .transparent-stage img,
+      .screen-stage img {
+        width: 100%;
+        height: 100%;
+        min-height: 290px;
+        object-fit: contain;
+      }
+
+      .watermark-preview {
+        grid-column: 1 / -1;
+      }
+
+      .watermark-stage {
+        position: relative;
+        overflow: hidden;
+        aspect-ratio: 16 / 9;
+        background: #0a1628;
+      }
+
+      .watermark-stage img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .screen-stage {
+        background: linear-gradient(145deg, #0a1628, #131e2e);
+      }
+
+      .section-note {
+        margin: 0 0 18px;
+        color: #47607d;
+        line-height: 1.5;
+      }
+
       @media (max-width: 760px) {
         body {
           padding: 28px 14px 56px;
@@ -203,6 +310,11 @@
           grid-template-columns: 1fr;
         }
 
+        .asset-grid,
+        .asset-grid.three-up {
+          grid-template-columns: 1fr;
+        }
+
         .avatar-option {
           grid-template-columns: 110px 1fr;
         }
@@ -223,9 +335,19 @@
           El rostro crea reconocimiento; el banner explica la promesa del canal.
           El monograma queda como sello para vídeos, overlays e intros.
         </p>
+        <nav class="jump-nav" aria-label="Secciones del sistema">
+          <a href="#channel">Canal</a>
+          <a href="#banners">Banners</a>
+          <a href="#avatars">Avatares</a>
+          <a href="#thumbnails">Thumbnails</a>
+          <a href="#overlays">Overlays</a>
+          <a href="#chapters">Capítulos</a>
+          <a href="#diagrams">Diagramas</a>
+          <a href="#screen">Demo</a>
+        </nav>
       </header>
 
-      <section class="card">
+      <section class="card" id="channel">
         <div class="card-head">
           <strong>Vista del canal</strong>
           <span>Propuesta recomendada</span>
@@ -242,7 +364,7 @@
         </div>
       </section>
 
-      <section class="card">
+      <section class="card" id="avatars">
         <div class="card-head">
           <strong>Recorte seguro</strong>
           <span>Móvil · tablet · escritorio</span>
@@ -272,6 +394,151 @@
               <p>Mejor como watermark, firma visual, intro y lower third.</p>
             </div>
           </article>
+        </div>
+      </section>
+
+      <section class="card" id="banners">
+        <div class="card-head">
+          <strong>Banners del canal</strong>
+          <span>ES · EN · editorial · retrato</span>
+        </div>
+        <p class="section-note">
+          La versión editorial es la recomendada. La variante con retrato se conserva
+          para comparar o para campañas puntuales.
+        </p>
+        <div class="asset-grid">
+          <figure class="asset">
+            <img src="banner/channel-banner-es.png" alt="Banner editorial en español" />
+            <figcaption><strong>Editorial ES</strong><span>Recomendado</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <img src="banner/channel-banner-en.png" alt="Banner editorial en inglés" />
+            <figcaption><strong>Editorial EN</strong><span>Localizado</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <img src="banner/channel-banner-portrait-es.png" alt="Banner con retrato en español" />
+            <figcaption><strong>Retrato ES</strong><span>Alternativa</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <img src="banner/channel-banner-portrait-en.png" alt="Banner con retrato en inglés" />
+            <figcaption><strong>Retrato EN</strong><span>Alternativa</span></figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="card" id="thumbnails">
+        <div class="card-head">
+          <strong>Sistema de thumbnails</strong>
+          <span>3 familias · ES / EN</span>
+        </div>
+        <div class="asset-grid three-up">
+          <figure class="asset">
+            <img src="thumbnails/presenter-es.png" alt="Thumbnail con presentador en español" />
+            <figcaption><strong>Presentador ES</strong><span>Rostro</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <img src="thumbnails/presenter-en.png" alt="Thumbnail con presentador en inglés" />
+            <figcaption><strong>Presenter EN</strong><span>Portrait</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <img src="thumbnails/architecture-es.png" alt="Thumbnail de arquitectura en español" />
+            <figcaption><strong>Arquitectura ES</strong><span>Diagrama</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <img src="thumbnails/architecture-en.png" alt="Thumbnail de arquitectura en inglés" />
+            <figcaption><strong>Architecture EN</strong><span>Diagram</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <img src="thumbnails/decision-es.png" alt="Thumbnail de decisión en español" />
+            <figcaption><strong>Decisión ES</strong><span>Regla</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <img src="thumbnails/decision-en.png" alt="Thumbnail de decisión en inglés" />
+            <figcaption><strong>Decision EN</strong><span>Rule</span></figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="card" id="overlays">
+        <div class="card-head">
+          <strong>Overlays para vídeo</strong>
+          <span>Transparencia · ES / EN</span>
+        </div>
+        <div class="asset-grid">
+          <figure class="asset watermark-preview">
+            <div class="watermark-stage">
+              <img src="thumbnails/architecture-es.png" alt="Fotograma técnico de ejemplo" />
+              <img src="overlays/watermark-jp.png" alt="Watermark JP aplicado" />
+            </div>
+            <figcaption><strong>Watermark JP</strong><span>Obligatorio en cada vídeo</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <div class="transparent-stage"><img src="overlays/lower-third-es.png" alt="Lower third en español" /></div>
+            <figcaption><strong>Lower third ES</strong><span>Nombre + rol</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <div class="transparent-stage"><img src="overlays/lower-third-en.png" alt="Lower third en inglés" /></div>
+            <figcaption><strong>Lower third EN</strong><span>Name + role</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <div class="transparent-stage"><img src="overlays/evidence-callout-es.png" alt="Callout de evidencia en español" /></div>
+            <figcaption><strong>Evidencia ES</strong><span>Fuente</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <div class="transparent-stage"><img src="overlays/evidence-callout-en.png" alt="Callout de evidencia en inglés" /></div>
+            <figcaption><strong>Evidence EN</strong><span>Source</span></figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="card" id="chapters">
+        <div class="card-head">
+          <strong>Chapter cards</strong>
+          <span>4 temas · ES / EN</span>
+        </div>
+        <div class="asset-grid">
+          <figure class="asset"><img src="chapters/architecture-es.png" alt="Arquitectura ES" /><figcaption><strong>Arquitectura</strong><span>ES</span></figcaption></figure>
+          <figure class="asset"><img src="chapters/architecture-en.png" alt="Architecture EN" /><figcaption><strong>Architecture</strong><span>EN</span></figcaption></figure>
+          <figure class="asset"><img src="chapters/governance-es.png" alt="Gobernanza ES" /><figcaption><strong>Gobernanza</strong><span>ES</span></figcaption></figure>
+          <figure class="asset"><img src="chapters/governance-en.png" alt="Governance EN" /><figcaption><strong>Governance</strong><span>EN</span></figcaption></figure>
+          <figure class="asset"><img src="chapters/security-es.png" alt="Seguridad ES" /><figcaption><strong>Seguridad</strong><span>ES</span></figcaption></figure>
+          <figure class="asset"><img src="chapters/security-en.png" alt="Security EN" /><figcaption><strong>Security</strong><span>EN</span></figcaption></figure>
+          <figure class="asset"><img src="chapters/roi-es.png" alt="ROI ES" /><figcaption><strong>ROI</strong><span>ES</span></figcaption></figure>
+          <figure class="asset"><img src="chapters/roi-en.png" alt="ROI EN" /><figcaption><strong>ROI</strong><span>EN</span></figcaption></figure>
+        </div>
+      </section>
+
+      <section class="card" id="diagrams">
+        <div class="card-head">
+          <strong>Diagramas técnicos</strong>
+          <span>4 familias · ES / EN</span>
+        </div>
+        <div class="asset-grid">
+          <figure class="asset"><img src="diagrams/reference-architecture-es.png" alt="Arquitectura de referencia ES" /><figcaption><strong>Arquitectura de referencia</strong><span>ES</span></figcaption></figure>
+          <figure class="asset"><img src="diagrams/reference-architecture-en.png" alt="Reference architecture EN" /><figcaption><strong>Reference architecture</strong><span>EN</span></figcaption></figure>
+          <figure class="asset"><img src="diagrams/governance-controls-es.png" alt="Controles de gobernanza ES" /><figcaption><strong>Controles de gobernanza</strong><span>ES</span></figcaption></figure>
+          <figure class="asset"><img src="diagrams/governance-controls-en.png" alt="Governance controls EN" /><figcaption><strong>Governance controls</strong><span>EN</span></figcaption></figure>
+          <figure class="asset"><img src="diagrams/roi-evidence-es.png" alt="Evidencia ROI ES" /><figcaption><strong>Evidencia ROI</strong><span>ES</span></figcaption></figure>
+          <figure class="asset"><img src="diagrams/roi-evidence-en.png" alt="ROI evidence EN" /><figcaption><strong>ROI evidence</strong><span>EN</span></figcaption></figure>
+          <figure class="asset"><img src="diagrams/decision-rule-es.png" alt="Regla de decisión ES" /><figcaption><strong>Regla de decisión</strong><span>ES</span></figcaption></figure>
+          <figure class="asset"><img src="diagrams/decision-rule-en.png" alt="Decision rule EN" /><figcaption><strong>Decision rule</strong><span>EN</span></figcaption></figure>
+        </div>
+      </section>
+
+      <section class="card" id="screen">
+        <div class="card-head">
+          <strong>Marco de demo</strong>
+          <span>Captura 16:9 · ES / EN</span>
+        </div>
+        <div class="asset-grid">
+          <figure class="asset">
+            <div class="screen-stage"><img src="screen-frame/screen-demo-es.png" alt="Marco de demo en español" /></div>
+            <figcaption><strong>Demo técnico</strong><span>ES</span></figcaption>
+          </figure>
+          <figure class="asset">
+            <div class="screen-stage"><img src="screen-frame/screen-demo-en.png" alt="Demo frame in English" /></div>
+            <figcaption><strong>Technical demo</strong><span>EN</span></figcaption>
+          </figure>
         </div>
       </section>
     </main>

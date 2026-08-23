@@ -1,0 +1,38 @@
+<!doctype html>
+        <html lang="en" class="transparent">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>JP watermark</title>
+            <link rel="stylesheet" href="../brand.css" />
+            <style>
+
+.watermark-page { background: transparent; }
+.watermark-mark {
+  position: absolute; top: 64px; right: 72px; width: 98px; height: 98px;
+  display: grid; grid-template-columns: 1fr 2px 1fr; gap: 7px; place-items: center;
+  padding: 0 15px; border-radius: 50%;
+  background: rgba(10,22,40,0.52);
+  border: 2px solid rgba(243,249,255,0.34);
+  box-shadow: inset 0 0 0 2px rgba(74,144,226,0.16);
+  opacity: 0.56;
+}
+.watermark-mark span {
+  color: #FFFFFF; font-size: 28px; line-height: 1; font-weight: 900; letter-spacing: -0.06em;
+}
+.watermark-mark i {
+  width: 2px; height: 34px; border-radius: 999px; background: #C4A35A;
+}
+
+            </style>
+          </head>
+          <body class="transparent">
+
+<main class="page watermark-page">
+  <div class="watermark-mark" aria-label="JP monogram">
+    <span>J</span><i></i><span>P</span>
+  </div>
+</main>
+
+          </body>
+        </html>

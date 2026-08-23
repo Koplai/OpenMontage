@@ -272,7 +272,7 @@ def thumbnail_presenter(lang: str, title: str) -> str:
               <div class="portrait-wrap">
                 <div class="portrait-accent"></div>
                 <div class="portrait-card">
-                  <img src="../../assets/profile-photo.png" alt="Juan Pedro Márquez portrait" />
+                  <img src="../../assets/casual-profile.png" alt="Juan Pedro Márquez portrait" />
                   <div class="portrait-overlay"></div>
                 </div>
                 <div class="signature">JP</div>
@@ -461,10 +461,6 @@ def banner(lang: str) -> str:
         "es": ["Arquitectura", "Agentes", "Gobernanza", "ROI"],
         "en": ["Architecture", "Agents", "Governance", "ROI"],
     }[lang]
-    principles = {
-        "es": ["Claro", "Directo", "Con rigor"],
-        "en": ["Clear", "Direct", "Rigorous"],
-    }[lang]
     return html_page(
         f"clean banner {lang}",
         dedent(
@@ -485,11 +481,7 @@ def banner(lang: str) -> str:
                 <aside class="brand-statement">
                   <div class="jp-mark">JP</div>
                   <div class="statement-rule"></div>
-                  <div class="principles">
-                    <span>{principles[0]}</span>
-                    <span>{principles[1]}</span>
-                    <span>{principles[2]}</span>
-                  </div>
+                  <div class="brand-topics">{labels[0]}<br />{labels[1]}<br />{labels[2]}<br />{labels[3]}</div>
                 </aside>
               </div>
             </main>
@@ -524,10 +516,9 @@ def banner(lang: str) -> str:
               color: rgba(243,249,255,0.96);
             }
             .statement-rule { width: 1px; height: 190px; background: linear-gradient(180deg, #4A90E2, #C4A35A); }
-            .principles { display: flex; flex-direction: column; gap: 18px; }
-            .principles span {
-              color: rgba(243,249,255,0.88); font-size: 20px; line-height: 1; font-weight: 700;
-              letter-spacing: 0.08em; text-transform: uppercase;
+            .brand-topics {
+              color: rgba(243,249,255,0.82); font-size: 18px; line-height: 1.65; font-weight: 700;
+              letter-spacing: 0.04em;
             }
             """
         ),
@@ -557,7 +548,7 @@ def banner_portrait(lang: str) -> str:
                   </div>
                 </section>
                 <figure class="portrait-card">
-                  <img src="../../assets/profile-photo.png" alt="Juan Pedro Márquez" />
+                  <img src="../../assets/casual-profile.png" alt="Juan Pedro Márquez" />
                   <div class="portrait-shade"></div>
                   <figcaption>
                     <strong>Juan Pedro Márquez</strong>
@@ -712,6 +703,42 @@ def avatar_portrait() -> str:
               background: linear-gradient(135deg, rgba(196,163,90,0.94), rgba(74,144,226,0.9)) border-box;
               mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
               mask-composite: exclude;
+            }
+            """
+        ),
+    )
+
+
+def watermark() -> str:
+    return html_page(
+        "JP watermark",
+        dedent(
+            """
+            <main class="page watermark-page">
+              <div class="watermark-mark" aria-label="JP monogram">
+                <span>J</span><i></i><span>P</span>
+              </div>
+            </main>
+            """
+        ),
+        transparent=True,
+        extra_style=dedent(
+            """
+            .watermark-page { background: transparent; }
+            .watermark-mark {
+              position: absolute; top: 64px; right: 72px; width: 98px; height: 98px;
+              display: grid; grid-template-columns: 1fr 2px 1fr; gap: 7px; place-items: center;
+              padding: 0 15px; border-radius: 50%;
+              background: rgba(10,22,40,0.52);
+              border: 2px solid rgba(243,249,255,0.34);
+              box-shadow: inset 0 0 0 2px rgba(74,144,226,0.16);
+              opacity: 0.56;
+            }
+            .watermark-mark span {
+              color: #FFFFFF; font-size: 28px; line-height: 1; font-weight: 900; letter-spacing: -0.06em;
+            }
+            .watermark-mark i {
+              width: 2px; height: 34px; border-radius: 999px; background: #C4A35A;
             }
             """
         ),
@@ -1231,6 +1258,9 @@ def build_sources() -> list[dict]:
     base = ROOT / "avatar" / "avatar-portrait"
     write(base.with_suffix('.html'), avatar_portrait())
     specs.append({"html": base.with_suffix('.html'), "png": base.with_suffix('.png'), "width": 800, "height": 800, "transparent": False})
+    base = ROOT / "overlays" / "watermark-jp"
+    write(base.with_suffix('.html'), watermark())
+    specs.append({"html": base.with_suffix('.html'), "png": base.with_suffix('.png'), "width": 1920, "height": 1080, "transparent": True})
     for lang in ["es", "en"]:
         lt = ROOT / "overlays" / f"lower-third-{lang}"
         write(lt.with_suffix('.html'), lower_third(lang))
@@ -1342,8 +1372,8 @@ def build_readme() -> None:
         - Slate `#47607D`
         - Ink `#131E2E`
         - Typography: local Satoshi weights 500 / 700 / 900 via `../assets/satoshi-{500,700,900}.woff2`
-        - Portrait source: `../assets/profile-photo.png`
-        - Casual avatar source: `../assets/casual-profile.png`
+        - Primary portrait source: `../assets/casual-profile.png`
+        - Legacy corporate portrait: `../assets/profile-photo.png`
 
         ## Reproducibility
 
@@ -1362,6 +1392,7 @@ def build_readme() -> None:
         | Thumbnails | 1280×720 | Keep the main title inside the left text column; maintain at least 72px outer margin. |
         | Banner | 2560×1440 | Critical content stays inside the centred 1546×423 safe zone (x: 507–2053, y: 509–932). |
         | Avatar | 800×800 | Portrait and monogram variants keep critical content inside the circular crop. |
+        | JP watermark | 1920×1080 | Transparent canvas; monogram anchored top-right at 40–55% opacity and clear of captions, UI, and evidence callouts. |
         | Lower-third | 1920×1080 | Transparent canvas; live plate anchored bottom-left within 88px margins. |
         | Evidence callout | 1920×1080 | Transparent canvas; floating box anchored top-right within 88px margins. |
         | Chapter cards | 1920×1080 | Main title block sits left, figure block right; both stay inside 80–90px margins. |
@@ -1397,6 +1428,7 @@ def build_readme() -> None:
         - `avatar-portrait.html` / `avatar-portrait.png`
 
         ### overlays/
+        - `watermark-jp.html` / `watermark-jp.png`
         - `lower-third-es.html` / `lower-third-es.png`
         - `lower-third-en.html` / `lower-third-en.png`
         - `evidence-callout-es.html` / `evidence-callout-es.png`

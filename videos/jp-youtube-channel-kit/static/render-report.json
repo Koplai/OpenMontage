@@ -85,6 +85,13 @@
       "transparent": false
     },
     {
+      "html": "overlays/watermark-jp.html",
+      "png": "overlays/watermark-jp.png",
+      "width": 1920,
+      "height": 1080,
+      "transparent": true
+    },
+    {
       "html": "overlays/lower-third-es.html",
       "png": "overlays/lower-third-es.png",
       "width": 1920,

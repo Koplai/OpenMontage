@@ -434,7 +434,7 @@ window.JP_VIDEO_001 = {
       kind: "camera",
       cue: "PANTALLA FINAL · Reservar 20 segundos",
       text:
-        "En el siguiente vídeo compararemos cuándo Copilot Studio es suficiente y cuándo necesitas Microsoft Foundry. Si estás diseñando agentes para empresa, continúa por esa lista de reproducción. Claro. Directo. Con rigor.",
+        "En el siguiente vídeo compararemos cuándo Copilot Studio es suficiente y cuándo necesitas Microsoft Foundry. Si estás diseñando agentes para empresa, continúa por esa lista de reproducción.",
     },
   ],
   description: `Un agente de Copilot Studio puede funcionar en una demo y seguir sin estar preparado para producción.

@@ -36,7 +36,9 @@ educational-content disclaimer and avoid implying Microsoft endorsement.
 - Inter: body and teleprompter.
 - Space Mono: configuration, commands, evidence labels.
 - Spanish voice: calm, precise, practical, never inflated.
-- Approved closing line: **Claro. Directo. Con rigor.**
+- No fixed slogan. Close each episode with a content-specific decision or action.
+- Every final video includes the transparent `JP` watermark from the channel kit,
+  positioned within the upper-right safe area.
 - Editorial rule: every important claim leads to a source, configuration,
   architecture, test, or observable result.
 

@@ -12,8 +12,8 @@ Premium bilingual YouTube identity system for Juan Pedro Márquez.
 - Slate `#47607D`
 - Ink `#131E2E`
 - Typography: local Satoshi weights 500 / 700 / 900 via `../assets/satoshi-{500,700,900}.woff2`
-- Portrait source: `../assets/profile-photo.png`
-- Casual avatar source: `../assets/casual-profile.png`
+- Primary portrait source: `../assets/casual-profile.png`
+- Legacy corporate portrait: `../assets/profile-photo.png`
 
 ## Reproducibility
 
@@ -32,6 +32,7 @@ python3 videos/jp-youtube-channel-kit/static/generate_assets.py
 | Thumbnails | 1280×720 | Keep the main title inside the left text column; maintain at least 72px outer margin. |
 | Banner | 2560×1440 | Critical content stays inside the centred 1546×423 safe zone (x: 507–2053, y: 509–932). |
 | Avatar | 800×800 | Portrait and monogram variants keep critical content inside the circular crop. |
+| JP watermark | 1920×1080 | Transparent canvas; monogram anchored top-right at 40–55% opacity and clear of captions, UI, and evidence callouts. |
 | Lower-third | 1920×1080 | Transparent canvas; live plate anchored bottom-left within 88px margins. |
 | Evidence callout | 1920×1080 | Transparent canvas; floating box anchored top-right within 88px margins. |
 | Chapter cards | 1920×1080 | Main title block sits left, figure block right; both stay inside 80–90px margins. |
@@ -67,6 +68,7 @@ python3 videos/jp-youtube-channel-kit/static/generate_assets.py
 - `avatar-portrait.html` / `avatar-portrait.png`
 
 ### overlays/
+- `watermark-jp.html` / `watermark-jp.png`
 - `lower-third-es.html` / `lower-third-es.png`
 - `lower-third-en.html` / `lower-third-en.png`
 - `evidence-callout-es.html` / `evidence-callout-es.png`
