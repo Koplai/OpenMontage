@@ -13,6 +13,7 @@ Premium bilingual YouTube identity system for Juan Pedro Márquez.
 - Ink `#131E2E`
 - Typography: local Satoshi weights 500 / 700 / 900 via `../assets/satoshi-{500,700,900}.woff2`
 - Portrait source: `../assets/profile-photo.png`
+- Casual avatar source: `../assets/casual-profile.png`
 
 ## Reproducibility
 

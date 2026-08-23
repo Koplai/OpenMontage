@@ -678,7 +678,7 @@ def avatar_portrait() -> str:
             """
             <main class="page portrait-avatar-page">
               <div class="portrait-disc">
-                <img src="../../assets/profile-photo.png" alt="Juan Pedro Márquez" />
+                <img src="../../assets/casual-profile.png" alt="Juan Pedro Márquez" />
                 <div class="portrait-grade"></div>
                 <div class="portrait-ring"></div>
               </div>
@@ -696,9 +696,9 @@ def avatar_portrait() -> str:
               background: #131E2E; box-shadow: 0 24px 64px rgba(3,10,20,0.34);
             }
             .portrait-disc img {
-              width: 100%; height: 100%; object-fit: cover; object-position: 31% 24%;
-              transform: scale(1.22); transform-origin: 31% 24%;
-              filter: saturate(0.92) contrast(1.04) brightness(1.02);
+              width: 100%; height: 100%; object-fit: cover; object-position: center 42%;
+              transform: scale(1.045); transform-origin: center 42%;
+              filter: saturate(0.9) contrast(1.03) brightness(1.02);
             }
             .portrait-grade {
               position: absolute; inset: 0;
@@ -1343,6 +1343,7 @@ def build_readme() -> None:
         - Ink `#131E2E`
         - Typography: local Satoshi weights 500 / 700 / 900 via `../assets/satoshi-{500,700,900}.woff2`
         - Portrait source: `../assets/profile-photo.png`
+        - Casual avatar source: `../assets/casual-profile.png`
 
         ## Reproducibility
 
