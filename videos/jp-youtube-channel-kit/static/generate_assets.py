@@ -471,13 +471,21 @@ def banner(lang: str) -> str:
                   <div class="eyebrow"><span class="dot"></span>{LANG[lang]['series']}</div>
                   <h1 data-check="title">{LANG[lang]['banner_title']}</h1>
                   <p data-check="subtitle">{LANG[lang]['banner_sub']}</p>
+                  <div class="topic-strip" aria-label="Channel topics">
+                    <span>{labels[0]}</span>
+                    <span>{labels[1]}</span>
+                    <span>{labels[2]}</span>
+                    <span>{labels[3]}</span>
+                  </div>
                 </section>
-                <section class="topic-grid">
-                  <div class="topic-card accent-azure">{labels[0]}</div>
-                  <div class="topic-card accent-gold">{labels[1]}</div>
-                  <div class="topic-card accent-ice">{labels[2]}</div>
-                  <div class="topic-card accent-slate">{labels[3]}</div>
-                </section>
+                <figure class="portrait-card">
+                  <img src="../../assets/profile-photo.png" alt="Juan Pedro Márquez" />
+                  <div class="portrait-shade"></div>
+                  <figcaption>
+                    <strong>Juan Pedro Márquez</strong>
+                    <span>AI · Cloud · Copilot</span>
+                  </figcaption>
+                </figure>
               </div>
             </main>
             """
@@ -487,28 +495,48 @@ def banner(lang: str) -> str:
             .banner-page { background: linear-gradient(135deg, #0A1628 0%, #131E2E 68%, #0F2037 100%); }
             .safe-zone {
               position: absolute; left: 507px; top: 509px; width: 1546px; height: 423px;
-              display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 42px; align-items: center;
+              display: grid; grid-template-columns: minmax(0, 1fr) 520px; gap: 44px; align-items: center;
               border-top: 1px solid rgba(74,144,226,0.18); border-bottom: 1px solid rgba(74,144,226,0.18);
             }
+            .copy { min-width: 0; }
             .copy h1 {
-              margin: 22px 0 0; width: 780px; font-size: 104px; line-height: 0.95; font-weight: 900; letter-spacing: -0.05em;
+              margin: 18px 0 0; max-width: 860px; font-size: 92px; line-height: 0.95; font-weight: 900; letter-spacing: -0.05em;
             }
             .copy p {
-              margin: 20px 0 0; width: 760px; font-size: 36px; line-height: 1.16; color: rgba(243,249,255,0.86);
+              margin: 16px 0 0; max-width: 840px; font-size: 32px; line-height: 1.16; color: rgba(243,249,255,0.86);
             }
-            .topic-grid {
-              display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-self: stretch;
-              padding: 24px 0 24px 10px;
+            .topic-strip {
+              display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px;
             }
-            .topic-card {
-              border-radius: 24px; background: rgba(19,30,46,0.78); border: 1px solid rgba(255,255,255,0.08);
-              display: flex; align-items: flex-end; justify-content: flex-start; padding: 22px 22px 20px;
-              font-size: 28px; font-weight: 900; letter-spacing: -0.02em; box-shadow: var(--shadow);
+            .topic-strip span {
+              padding: 8px 13px; border-radius: 999px;
+              background: rgba(19,30,46,0.8); border: 1px solid rgba(74,144,226,0.24);
+              color: rgba(243,249,255,0.92); font-size: 18px; font-weight: 700; letter-spacing: 0.01em;
             }
-            .accent-azure { box-shadow: inset 0 0 0 1px rgba(74,144,226,0.28); }
-            .accent-gold { box-shadow: inset 0 0 0 1px rgba(196,163,90,0.32); }
-            .accent-ice { box-shadow: inset 0 0 0 1px rgba(243,249,255,0.24); }
-            .accent-slate { box-shadow: inset 0 0 0 1px rgba(71,96,125,0.34); }
+            .portrait-card {
+              position: relative; width: 520px; height: 423px; margin: 0; overflow: hidden;
+              border-radius: 30px; border: 1px solid rgba(255,255,255,0.11);
+              background: #131E2E; box-shadow: var(--shadow);
+            }
+            .portrait-card img {
+              width: 100%; height: 100%; object-fit: cover; object-position: 32% 28%;
+              filter: saturate(0.88) contrast(1.04);
+            }
+            .portrait-shade {
+              position: absolute; inset: 0;
+              background:
+                linear-gradient(90deg, rgba(10,22,40,0.18) 0%, transparent 42%),
+                linear-gradient(180deg, transparent 52%, rgba(10,22,40,0.86) 100%);
+            }
+            .portrait-card figcaption {
+              position: absolute; left: 26px; right: 26px; bottom: 22px;
+              display: flex; align-items: flex-end; justify-content: space-between; gap: 18px;
+            }
+            .portrait-card strong { font-size: 22px; line-height: 1.1; font-weight: 900; }
+            .portrait-card figcaption span {
+              flex: 0 0 auto; color: var(--gold); font-size: 15px; font-weight: 700;
+              letter-spacing: 0.05em; text-transform: uppercase;
+            }
             """
         ),
     )
