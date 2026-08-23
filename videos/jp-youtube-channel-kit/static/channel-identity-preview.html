@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JP YouTube Identity Preview</title>
+    <link rel="stylesheet" href="brand.css" />
+    <style>
+      html,
+      body {
+        width: auto;
+        min-height: 100%;
+        overflow: auto;
+        background: #eef5fc;
+        color: #131e2e;
+      }
+
+      body {
+        padding: 48px 24px 80px;
+      }
+
+      .preview {
+        width: min(1180px, 100%);
+        margin: 0 auto;
+      }
+
+      .intro {
+        margin-bottom: 28px;
+      }
+
+      .intro .eyebrow {
+        color: #131e2e;
+        background: rgba(74, 144, 226, 0.08);
+        border-color: rgba(74, 144, 226, 0.16);
+      }
+
+      h1 {
+        margin: 20px 0 10px;
+        font-size: clamp(42px, 6vw, 76px);
+        line-height: 0.95;
+        letter-spacing: -0.05em;
+      }
+
+      .intro p {
+        max-width: 780px;
+        margin: 0;
+        color: #47607d;
+        font-size: 20px;
+        line-height: 1.5;
+      }
+
+      .card {
+        margin-top: 24px;
+        padding: 20px;
+        border: 1px solid rgba(19, 30, 46, 0.08);
+        border-radius: 28px;
+        background: #fff;
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.08);
+      }
+
+      .card-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 16px;
+      }
+
+      .card-head strong {
+        font-size: 24px;
+      }
+
+      .card-head span {
+        color: #47607d;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .channel {
+        overflow: hidden;
+        border: 1px solid rgba(19, 30, 46, 0.1);
+        border-radius: 22px;
+        background: #fff;
+      }
+
+      .banner-crop {
+        height: 310px;
+        background: #0a1628;
+      }
+
+      .banner-crop img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+        display: block;
+      }
+
+      .channel-meta {
+        position: relative;
+        min-height: 170px;
+        padding: 30px 32px 28px 188px;
+      }
+
+      .channel-avatar {
+        position: absolute;
+        left: 32px;
+        top: -70px;
+        width: 132px;
+        height: 132px;
+        border: 6px solid #fff;
+        border-radius: 50%;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
+      }
+
+      .channel-meta h2 {
+        margin: 0;
+        font-size: 30px;
+        letter-spacing: -0.03em;
+      }
+
+      .channel-meta p {
+        margin: 8px 0 0;
+        color: #47607d;
+        font-size: 16px;
+      }
+
+      .safe-crop {
+        overflow: hidden;
+        aspect-ratio: 1546 / 423;
+        border-radius: 18px;
+        background: #0a1628;
+      }
+
+      .safe-crop img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+        display: block;
+      }
+
+      .avatar-options {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px;
+      }
+
+      .avatar-option {
+        display: grid;
+        grid-template-columns: 150px 1fr;
+        gap: 24px;
+        align-items: center;
+        padding: 22px;
+        border-radius: 20px;
+        background: #f3f9ff;
+      }
+
+      .avatar-option img {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
+      }
+
+      .avatar-option h3 {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      .avatar-option p {
+        margin: 8px 0 0;
+        color: #47607d;
+        line-height: 1.45;
+      }
+
+      .recommended {
+        border: 2px solid rgba(74, 144, 226, 0.45);
+      }
+
+      @media (max-width: 760px) {
+        body {
+          padding: 28px 14px 56px;
+        }
+
+        .banner-crop {
+          height: 190px;
+        }
+
+        .channel-meta {
+          padding: 78px 22px 24px;
+        }
+
+        .channel-avatar {
+          left: 22px;
+          top: -56px;
+          width: 112px;
+          height: 112px;
+        }
+
+        .avatar-options {
+          grid-template-columns: 1fr;
+        }
+
+        .avatar-option {
+          grid-template-columns: 110px 1fr;
+        }
+
+        .avatar-option img {
+          width: 110px;
+          height: 110px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="preview">
+      <header class="intro">
+        <div class="eyebrow"><span class="dot"></span>Propuesta de identidad</div>
+        <h1>Personal, no corporativa</h1>
+        <p>
+          El rostro crea reconocimiento; el banner explica la promesa del canal.
+          El monograma queda como sello para vídeos, overlays e intros.
+        </p>
+      </header>
+
+      <section class="card">
+        <div class="card-head">
+          <strong>Vista del canal</strong>
+          <span>Propuesta recomendada</span>
+        </div>
+        <div class="channel">
+          <div class="banner-crop">
+            <img src="banner/channel-banner-es.png" alt="Banner editorial del canal" />
+          </div>
+          <div class="channel-meta">
+            <img class="channel-avatar" src="avatar/avatar-portrait.png" alt="Avatar de Juan Pedro Márquez" />
+            <h2>Juan Pedro Márquez — IA en producción</h2>
+            <p>Arquitectura, agentes, gobernanza y ROI desde la experiencia real.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <strong>Recorte seguro</strong>
+          <span>Móvil · tablet · escritorio</span>
+        </div>
+        <div class="safe-crop">
+          <img src="banner/channel-banner-es.png" alt="Área segura del banner" />
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <strong>Comparación de avatar</strong>
+          <span>Rostro vs. monograma</span>
+        </div>
+        <div class="avatar-options">
+          <article class="avatar-option recommended">
+            <img src="avatar/avatar-portrait.png" alt="Avatar retrato" />
+            <div>
+              <h3>Retrato cercano</h3>
+              <p>Más humano, reconocible y apropiado para una marca personal.</p>
+            </div>
+          </article>
+          <article class="avatar-option">
+            <img src="avatar/avatar-monogram.png" alt="Avatar monograma" />
+            <div>
+              <h3>Monograma JP</h3>
+              <p>Mejor como watermark, firma visual, intro y lower third.</p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

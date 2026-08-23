@@ -30,7 +30,7 @@ python3 videos/jp-youtube-channel-kit/static/generate_assets.py
 |---|---:|---|
 | Thumbnails | 1280×720 | Keep the main title inside the left text column; maintain at least 72px outer margin. |
 | Banner | 2560×1440 | Critical content stays inside the centred 1546×423 safe zone (x: 507–2053, y: 509–932). |
-| Avatar | 800×800 | Circular monogram centered with 70px outer breathing room. |
+| Avatar | 800×800 | Portrait and monogram variants keep critical content inside the circular crop. |
 | Lower-third | 1920×1080 | Transparent canvas; live plate anchored bottom-left within 88px margins. |
 | Evidence callout | 1920×1080 | Transparent canvas; floating box anchored top-right within 88px margins. |
 | Chapter cards | 1920×1080 | Main title block sits left, figure block right; both stay inside 80–90px margins. |
@@ -58,9 +58,12 @@ python3 videos/jp-youtube-channel-kit/static/generate_assets.py
 ### banner/
 - `channel-banner-es.html` / `channel-banner-es.png`
 - `channel-banner-en.html` / `channel-banner-en.png`
+- `channel-banner-portrait-es.html` / `channel-banner-portrait-es.png`
+- `channel-banner-portrait-en.html` / `channel-banner-portrait-en.png`
 
 ### avatar/
 - `avatar-monogram.html` / `avatar-monogram.png`
+- `avatar-portrait.html` / `avatar-portrait.png`
 
 ### overlays/
 - `lower-third-es.html` / `lower-third-es.png`

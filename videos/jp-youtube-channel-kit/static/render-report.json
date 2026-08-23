@@ -50,6 +50,13 @@
       "transparent": false
     },
     {
+      "html": "banner/channel-banner-portrait-es.html",
+      "png": "banner/channel-banner-portrait-es.png",
+      "width": 2560,
+      "height": 1440,
+      "transparent": false
+    },
+    {
       "html": "banner/channel-banner-en.html",
       "png": "banner/channel-banner-en.png",
       "width": 2560,
@@ -57,8 +64,22 @@
       "transparent": false
     },
     {
+      "html": "banner/channel-banner-portrait-en.html",
+      "png": "banner/channel-banner-portrait-en.png",
+      "width": 2560,
+      "height": 1440,
+      "transparent": false
+    },
+    {
       "html": "avatar/avatar-monogram.html",
       "png": "avatar/avatar-monogram.png",
+      "width": 800,
+      "height": 800,
+      "transparent": false
+    },
+    {
+      "html": "avatar/avatar-portrait.html",
+      "png": "avatar/avatar-portrait.png",
       "width": 800,
       "height": 800,
       "transparent": false

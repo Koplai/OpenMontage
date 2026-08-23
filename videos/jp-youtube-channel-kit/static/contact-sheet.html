@@ -30,7 +30,8 @@
 .thumb-row img, .banner-wrap img, .avatar-card img { width: 100%; display: block; border-radius: 20px; border: 1px solid rgba(19,30,46,0.08); }
 .banner-wrap img { border-radius: 26px; }
 .avatar-card { display: flex; flex-direction: column; }
-.avatar-card img { width: 320px; align-self: center; }
+.avatar-pair { display: flex; gap: 22px; justify-content: center; align-items: center; }
+.avatar-card img { width: 240px; border-radius: 50%; }
 .overlay-preview { height: 360px; }
 .checker, .screen-stage { position: relative; border-radius: 22px; overflow: hidden; height: 100%; }
 .checker {
@@ -64,12 +65,15 @@
       </div>
     </article>
     <article class="card wide">
-      <div class="card-head"><h2>Banner</h2><span>Safe zone centred</span></div>
+      <div class="card-head"><h2>Banner</h2><span>Editorial promise · safe zone centred</span></div>
       <div class="banner-wrap"><img src="banner/channel-banner-en.png" alt="Channel banner" /></div>
     </article>
     <article class="card narrow avatar-card">
-      <div class="card-head"><h2>Avatar</h2><span>Monogram</span></div>
-      <img src="avatar/avatar-monogram.png" alt="Avatar" />
+      <div class="card-head"><h2>Avatar</h2><span>Personal portrait</span></div>
+      <div class="avatar-pair">
+        <img src="avatar/avatar-portrait.png" alt="Portrait avatar" />
+        <img src="avatar/avatar-monogram.png" alt="Monogram avatar" />
+      </div>
     </article>
     <article class="card wide overlay-card">
       <div class="card-head"><h2>Overlays</h2><span>Transparent lower-third + callout</span></div>

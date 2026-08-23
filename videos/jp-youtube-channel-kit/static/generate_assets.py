@@ -458,6 +458,84 @@ def thumbnail_decision(lang: str, title: str) -> str:
 
 def banner(lang: str) -> str:
     labels = {
+        "es": ["Arquitectura", "Agentes", "Gobernanza", "ROI"],
+        "en": ["Architecture", "Agents", "Governance", "ROI"],
+    }[lang]
+    principles = {
+        "es": ["Claro", "Directo", "Con rigor"],
+        "en": ["Clear", "Direct", "Rigorous"],
+    }[lang]
+    return html_page(
+        f"clean banner {lang}",
+        dedent(
+            f"""
+            <main class="page bg-grid grain clean-banner">
+              <div class="safe-zone">
+                <section class="copy">
+                  <div class="eyebrow"><span class="dot"></span>Juan Pedro Márquez</div>
+                  <h1 data-check="title">{LANG[lang]['banner_title']}</h1>
+                  <p data-check="subtitle">{LANG[lang]['banner_sub']}</p>
+                  <div class="topic-strip" aria-label="Channel topics">
+                    <span>{labels[0]}</span>
+                    <span>{labels[1]}</span>
+                    <span>{labels[2]}</span>
+                    <span>{labels[3]}</span>
+                  </div>
+                </section>
+                <aside class="brand-statement">
+                  <div class="jp-mark">JP</div>
+                  <div class="statement-rule"></div>
+                  <div class="principles">
+                    <span>{principles[0]}</span>
+                    <span>{principles[1]}</span>
+                    <span>{principles[2]}</span>
+                  </div>
+                </aside>
+              </div>
+            </main>
+            """
+        ),
+        extra_style=dedent(
+            """
+            .clean-banner { background: linear-gradient(135deg, #0A1628 0%, #131E2E 68%, #0F2037 100%); }
+            .safe-zone {
+              position: absolute; left: 507px; top: 509px; width: 1546px; height: 423px;
+              display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 72px; align-items: center;
+              border-top: 1px solid rgba(74,144,226,0.18); border-bottom: 1px solid rgba(74,144,226,0.18);
+            }
+            .copy { min-width: 0; }
+            .copy h1 {
+              margin: 18px 0 0; max-width: 880px; font-size: 92px; line-height: 0.95; font-weight: 900; letter-spacing: -0.05em;
+            }
+            .copy p {
+              margin: 16px 0 0; max-width: 860px; font-size: 32px; line-height: 1.16; color: rgba(243,249,255,0.86);
+            }
+            .topic-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+            .topic-strip span {
+              padding: 8px 13px; border-radius: 999px;
+              background: rgba(19,30,46,0.8); border: 1px solid rgba(74,144,226,0.24);
+              color: rgba(243,249,255,0.92); font-size: 18px; font-weight: 700;
+            }
+            .brand-statement {
+              height: 280px; display: grid; grid-template-columns: 150px 1px 1fr; gap: 28px; align-items: center;
+            }
+            .jp-mark {
+              font-size: 112px; line-height: 1; font-weight: 900; letter-spacing: -0.09em;
+              color: rgba(243,249,255,0.96);
+            }
+            .statement-rule { width: 1px; height: 190px; background: linear-gradient(180deg, #4A90E2, #C4A35A); }
+            .principles { display: flex; flex-direction: column; gap: 18px; }
+            .principles span {
+              color: rgba(243,249,255,0.88); font-size: 20px; line-height: 1; font-weight: 700;
+              letter-spacing: 0.08em; text-transform: uppercase;
+            }
+            """
+        ),
+    )
+
+
+def banner_portrait(lang: str) -> str:
+    labels = {
         "es": ["Arquitectura", "Gobernanza", "Seguridad", "ROI"],
         "en": ["Architecture", "Governance", "Security", "ROI"],
     }[lang]
@@ -588,6 +666,53 @@ def avatar() -> str:
             .j { color: #FFFFFF; transform: translateX(14px); }
             .p { color: #F3F9FF; transform: translateX(-12px); }
             .divider { width: 8px; height: 220px; border-radius: 999px; background: #C4A35A; box-shadow: 0 0 0 10px rgba(196,163,90,0.12); }
+            """
+        ),
+    )
+
+
+def avatar_portrait() -> str:
+    return html_page(
+        "avatar portrait",
+        dedent(
+            """
+            <main class="page portrait-avatar-page">
+              <div class="portrait-disc">
+                <img src="../../assets/profile-photo.png" alt="Juan Pedro Márquez" />
+                <div class="portrait-grade"></div>
+                <div class="portrait-ring"></div>
+              </div>
+            </main>
+            """
+        ),
+        extra_style=dedent(
+            """
+            .portrait-avatar-page {
+              display: grid; place-items: center;
+              background: radial-gradient(circle at 50% 32%, #19304D 0%, #0A1628 68%, #07101D 100%);
+            }
+            .portrait-disc {
+              position: relative; width: 720px; height: 720px; border-radius: 50%; overflow: hidden;
+              background: #131E2E; box-shadow: 0 24px 64px rgba(3,10,20,0.34);
+            }
+            .portrait-disc img {
+              width: 100%; height: 100%; object-fit: cover; object-position: 31% 24%;
+              transform: scale(1.22); transform-origin: 31% 24%;
+              filter: saturate(0.92) contrast(1.04) brightness(1.02);
+            }
+            .portrait-grade {
+              position: absolute; inset: 0;
+              background:
+                radial-gradient(circle at 48% 38%, transparent 0%, transparent 48%, rgba(10,22,40,0.18) 78%, rgba(10,22,40,0.38) 100%),
+                linear-gradient(180deg, rgba(74,144,226,0.03), rgba(10,22,40,0.14));
+            }
+            .portrait-ring {
+              position: absolute; inset: 0; border-radius: 50%;
+              border: 14px solid transparent;
+              background: linear-gradient(135deg, rgba(196,163,90,0.94), rgba(74,144,226,0.9)) border-box;
+              mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+              mask-composite: exclude;
+            }
             """
         ),
     )
@@ -989,12 +1114,15 @@ def contact_sheet_html() -> str:
                   </div>
                 </article>
                 <article class="card wide">
-                  <div class="card-head"><h2>Banner</h2><span>Safe zone centred</span></div>
+                  <div class="card-head"><h2>Banner</h2><span>Editorial promise · safe zone centred</span></div>
                   <div class="banner-wrap"><img src="banner/channel-banner-en.png" alt="Channel banner" /></div>
                 </article>
                 <article class="card narrow avatar-card">
-                  <div class="card-head"><h2>Avatar</h2><span>Monogram</span></div>
-                  <img src="avatar/avatar-monogram.png" alt="Avatar" />
+                  <div class="card-head"><h2>Avatar</h2><span>Personal portrait</span></div>
+                  <div class="avatar-pair">
+                    <img src="avatar/avatar-portrait.png" alt="Portrait avatar" />
+                    <img src="avatar/avatar-monogram.png" alt="Monogram avatar" />
+                  </div>
                 </article>
                 <article class="card wide overlay-card">
                   <div class="card-head"><h2>Overlays</h2><span>Transparent lower-third + callout</span></div>
@@ -1059,7 +1187,8 @@ def contact_sheet_html() -> str:
             .thumb-row img, .banner-wrap img, .avatar-card img { width: 100%; display: block; border-radius: 20px; border: 1px solid rgba(19,30,46,0.08); }
             .banner-wrap img { border-radius: 26px; }
             .avatar-card { display: flex; flex-direction: column; }
-            .avatar-card img { width: 320px; align-self: center; }
+            .avatar-pair { display: flex; gap: 22px; justify-content: center; align-items: center; }
+            .avatar-card img { width: 240px; border-radius: 50%; }
             .overlay-preview { height: 360px; }
             .checker, .screen-stage { position: relative; border-radius: 22px; overflow: hidden; height: 100%; }
             .checker {
@@ -1093,8 +1222,14 @@ def build_sources() -> list[dict]:
         base = ROOT / "banner" / f"channel-banner-{lang}"
         write(base.with_suffix('.html'), banner(lang))
         specs.append({"html": base.with_suffix('.html'), "png": base.with_suffix('.png'), "width": 2560, "height": 1440, "transparent": False})
+        portrait_base = ROOT / "banner" / f"channel-banner-portrait-{lang}"
+        write(portrait_base.with_suffix('.html'), banner_portrait(lang))
+        specs.append({"html": portrait_base.with_suffix('.html'), "png": portrait_base.with_suffix('.png'), "width": 2560, "height": 1440, "transparent": False})
     base = ROOT / "avatar" / "avatar-monogram"
     write(base.with_suffix('.html'), avatar())
+    specs.append({"html": base.with_suffix('.html'), "png": base.with_suffix('.png'), "width": 800, "height": 800, "transparent": False})
+    base = ROOT / "avatar" / "avatar-portrait"
+    write(base.with_suffix('.html'), avatar_portrait())
     specs.append({"html": base.with_suffix('.html'), "png": base.with_suffix('.png'), "width": 800, "height": 800, "transparent": False})
     for lang in ["es", "en"]:
         lt = ROOT / "overlays" / f"lower-third-{lang}"
@@ -1225,7 +1360,7 @@ def build_readme() -> None:
         |---|---:|---|
         | Thumbnails | 1280×720 | Keep the main title inside the left text column; maintain at least 72px outer margin. |
         | Banner | 2560×1440 | Critical content stays inside the centred 1546×423 safe zone (x: 507–2053, y: 509–932). |
-        | Avatar | 800×800 | Circular monogram centered with 70px outer breathing room. |
+        | Avatar | 800×800 | Portrait and monogram variants keep critical content inside the circular crop. |
         | Lower-third | 1920×1080 | Transparent canvas; live plate anchored bottom-left within 88px margins. |
         | Evidence callout | 1920×1080 | Transparent canvas; floating box anchored top-right within 88px margins. |
         | Chapter cards | 1920×1080 | Main title block sits left, figure block right; both stay inside 80–90px margins. |
@@ -1253,9 +1388,12 @@ def build_readme() -> None:
         ### banner/
         - `channel-banner-es.html` / `channel-banner-es.png`
         - `channel-banner-en.html` / `channel-banner-en.png`
+        - `channel-banner-portrait-es.html` / `channel-banner-portrait-es.png`
+        - `channel-banner-portrait-en.html` / `channel-banner-portrait-en.png`
 
         ### avatar/
         - `avatar-monogram.html` / `avatar-monogram.png`
+        - `avatar-portrait.html` / `avatar-portrait.png`
 
         ### overlays/
         - `lower-third-es.html` / `lower-third-es.png`

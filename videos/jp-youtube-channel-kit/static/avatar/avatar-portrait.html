@@ -1,0 +1,50 @@
+<!doctype html>
+        <html lang="en" class="">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>avatar portrait</title>
+            <link rel="stylesheet" href="../brand.css" />
+            <style>
+
+.portrait-avatar-page {
+  display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 32%, #19304D 0%, #0A1628 68%, #07101D 100%);
+}
+.portrait-disc {
+  position: relative; width: 720px; height: 720px; border-radius: 50%; overflow: hidden;
+  background: #131E2E; box-shadow: 0 24px 64px rgba(3,10,20,0.34);
+}
+.portrait-disc img {
+  width: 100%; height: 100%; object-fit: cover; object-position: 31% 24%;
+  transform: scale(1.22); transform-origin: 31% 24%;
+  filter: saturate(0.92) contrast(1.04) brightness(1.02);
+}
+.portrait-grade {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 48% 38%, transparent 0%, transparent 48%, rgba(10,22,40,0.18) 78%, rgba(10,22,40,0.38) 100%),
+    linear-gradient(180deg, rgba(74,144,226,0.03), rgba(10,22,40,0.14));
+}
+.portrait-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 14px solid transparent;
+  background: linear-gradient(135deg, rgba(196,163,90,0.94), rgba(74,144,226,0.9)) border-box;
+  mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+            </style>
+          </head>
+          <body class="">
+
+<main class="page portrait-avatar-page">
+  <div class="portrait-disc">
+    <img src="../../assets/profile-photo.png" alt="Juan Pedro Márquez" />
+    <div class="portrait-grade"></div>
+    <div class="portrait-ring"></div>
+  </div>
+</main>
+
+          </body>
+        </html>

@@ -3,81 +3,69 @@
           <head>
             <meta charset="utf-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1" />
-            <title>banner en</title>
+            <title>clean banner en</title>
             <link rel="stylesheet" href="../brand.css" />
             <style>
 
-.banner-page { background: linear-gradient(135deg, #0A1628 0%, #131E2E 68%, #0F2037 100%); }
+.clean-banner { background: linear-gradient(135deg, #0A1628 0%, #131E2E 68%, #0F2037 100%); }
 .safe-zone {
   position: absolute; left: 507px; top: 509px; width: 1546px; height: 423px;
-  display: grid; grid-template-columns: minmax(0, 1fr) 520px; gap: 44px; align-items: center;
+  display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 72px; align-items: center;
   border-top: 1px solid rgba(74,144,226,0.18); border-bottom: 1px solid rgba(74,144,226,0.18);
 }
 .copy { min-width: 0; }
 .copy h1 {
-  margin: 18px 0 0; max-width: 860px; font-size: 92px; line-height: 0.95; font-weight: 900; letter-spacing: -0.05em;
+  margin: 18px 0 0; max-width: 880px; font-size: 92px; line-height: 0.95; font-weight: 900; letter-spacing: -0.05em;
 }
 .copy p {
-  margin: 16px 0 0; max-width: 840px; font-size: 32px; line-height: 1.16; color: rgba(243,249,255,0.86);
+  margin: 16px 0 0; max-width: 860px; font-size: 32px; line-height: 1.16; color: rgba(243,249,255,0.86);
 }
-.topic-strip {
-  display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px;
-}
+.topic-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
 .topic-strip span {
   padding: 8px 13px; border-radius: 999px;
   background: rgba(19,30,46,0.8); border: 1px solid rgba(74,144,226,0.24);
-  color: rgba(243,249,255,0.92); font-size: 18px; font-weight: 700; letter-spacing: 0.01em;
+  color: rgba(243,249,255,0.92); font-size: 18px; font-weight: 700;
 }
-.portrait-card {
-  position: relative; width: 520px; height: 423px; margin: 0; overflow: hidden;
-  border-radius: 30px; border: 1px solid rgba(255,255,255,0.11);
-  background: #131E2E; box-shadow: var(--shadow);
+.brand-statement {
+  height: 280px; display: grid; grid-template-columns: 150px 1px 1fr; gap: 28px; align-items: center;
 }
-.portrait-card img {
-  width: 100%; height: 100%; object-fit: cover; object-position: 32% 28%;
-  filter: saturate(0.88) contrast(1.04);
+.jp-mark {
+  font-size: 112px; line-height: 1; font-weight: 900; letter-spacing: -0.09em;
+  color: rgba(243,249,255,0.96);
 }
-.portrait-shade {
-  position: absolute; inset: 0;
-  background:
-    linear-gradient(90deg, rgba(10,22,40,0.18) 0%, transparent 42%),
-    linear-gradient(180deg, transparent 52%, rgba(10,22,40,0.86) 100%);
-}
-.portrait-card figcaption {
-  position: absolute; left: 26px; right: 26px; bottom: 22px;
-  display: flex; align-items: flex-end; justify-content: space-between; gap: 18px;
-}
-.portrait-card strong { font-size: 22px; line-height: 1.1; font-weight: 900; }
-.portrait-card figcaption span {
-  flex: 0 0 auto; color: var(--gold); font-size: 15px; font-weight: 700;
-  letter-spacing: 0.05em; text-transform: uppercase;
+.statement-rule { width: 1px; height: 190px; background: linear-gradient(180deg, #4A90E2, #C4A35A); }
+.principles { display: flex; flex-direction: column; gap: 18px; }
+.principles span {
+  color: rgba(243,249,255,0.88); font-size: 20px; line-height: 1; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
 }
 
             </style>
           </head>
           <body class="">
 
-<main class="page bg-grid grain banner-page">
+<main class="page bg-grid grain clean-banner">
   <div class="safe-zone">
     <section class="copy">
-      <div class="eyebrow"><span class="dot"></span>Technical series</div>
+      <div class="eyebrow"><span class="dot"></span>Juan Pedro Márquez</div>
       <h1 data-check="title">AI in Production</h1>
       <p data-check="subtitle">Architecture, governance and ROI without hype</p>
       <div class="topic-strip" aria-label="Channel topics">
         <span>Architecture</span>
+        <span>Agents</span>
         <span>Governance</span>
-        <span>Security</span>
         <span>ROI</span>
       </div>
     </section>
-    <figure class="portrait-card">
-      <img src="../../assets/profile-photo.png" alt="Juan Pedro Márquez" />
-      <div class="portrait-shade"></div>
-      <figcaption>
-        <strong>Juan Pedro Márquez</strong>
-        <span>AI · Cloud · Copilot</span>
-      </figcaption>
-    </figure>
+    <aside class="brand-statement">
+      <div class="jp-mark">JP</div>
+      <div class="statement-rule"></div>
+      <div class="principles">
+        <span>Clear</span>
+        <span>Direct</span>
+        <span>Rigorous</span>
+      </div>
+    </aside>
   </div>
 </main>
 
