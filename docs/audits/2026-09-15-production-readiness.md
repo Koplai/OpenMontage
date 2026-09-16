@@ -8,6 +8,12 @@
 
 **Change scope:** Assessment and recommendations, not implementation or deployment.
 
+**Implementation update, 16 September 2026:** hardening is underway on the
+development branch. This report remains the historical baseline; see
+[production operations](../PRODUCTION.md) for the new executable contracts,
+installation, and recovery procedures. Implementation is not by itself a
+production certification.
+
 ## Decision
 
 **Keep OpenMontage and harden its execution contracts. Do not rewrite the studio or add more generation providers first.**

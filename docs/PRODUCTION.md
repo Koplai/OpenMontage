@@ -48,6 +48,18 @@ Supply credentials through a trusted process launcher or secret manager such
 as OpenBao. Never put them in generated projects, exported bundles, Git, or
 audit logs.
 
+Keep production data outside disposable development worktrees. Before launching
+the agent and Backlot, set an absolute, stable projects root in the trusted
+environment, for example:
+
+```bash
+export OPENMONTAGE_PROJECTS_DIR="$HOME/Media/OpenMontage/projects"
+```
+
+Checkpoint APIs, event attribution, and Backlot share this setting. Do not put
+it in a project `.env`. Use a stable working directory while paid requests are
+pending: approvals also bind request path resolution and provider/tool identity.
+
 Legacy `.env` support now uses `lib/env_policy.json` in both Python and the
 vendored HeyGen JavaScript loader. Unknown keys, process-control settings,
 endpoint overrides, and credential-file locations are refused with key-only
@@ -131,9 +143,18 @@ The archive and restore destination must not already exist. Backup must be
 outside the source project. Restore validates every file and hash before
 publishing the restored directory; path traversal, symlinks, extra entries, and
 tampered content fail without replacing an existing production. Restore keeps
-the recorded project identity; use its original identifier in the destination.
+the recorded project identity and file modification times so unchanged reviewed
+output does not become spuriously stale. Older archives without modification
+times require a fresh review. Use the original project identifier in the destination.
 Test restoration into an isolated projects root before relying on a backup.
 Do not launch the project until the restore command has returned successfully.
+
+Restoring elsewhere is useful for **inspection**, not transparent paid-job
+migration. Existing artifact paths and approval/provider journals can bind the
+original canonical directory. Resume at the original absolute project path
+after safely moving aside the old copy. A different path requires an explicit
+reviewed migration/reconciliation; this tool does not rewrite approval identities
+or silently authorize spending from a copied ledger.
 
 The default size limit is 20 GiB; use `--max-bytes` explicitly for larger
 trusted projects. Store backups on access-controlled storage and apply an

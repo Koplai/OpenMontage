@@ -92,8 +92,11 @@ def _backup_project(project: Path, destination: Path, *, max_bytes: int) -> Path
                 with path.open("rb") as source, output.open(f"files/{relative.as_posix()}", "w") as target:
                     digest, size = _copy_hash(source, target, max_bytes - total)
                 total += size
+                attributes = path.stat()
                 manifest["files"][relative.as_posix()] = {
-                    "sha256": digest, "size": size, "mode": stat.S_IMODE(path.stat().st_mode) & 0o777,
+                    "sha256": digest, "size": size,
+                    "mode": stat.S_IMODE(attributes.st_mode) & 0o777,
+                    "mtime_ns": attributes.st_mtime_ns,
                 }
             output.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
         # A hard link is an atomic no-clobber publication, unlike replace().
@@ -149,6 +152,11 @@ def restore_project(archive: Path, destination: Path, *, max_bytes: int = DEFAUL
                 if digest != expected.get("sha256") or size != expected["size"]:
                     raise ValueError(f"Backup integrity check failed: {name}")
                 target.chmod(mode)
+                modified = expected.get("mtime_ns")
+                if modified is not None:
+                    if type(modified) is not int or not -(2**63) <= modified < 2**63:
+                        raise ValueError(f"Invalid modification time for {name}")
+                    os.utime(target, ns=(modified, modified))
             marker = json.loads((staged / "project.json").read_text(encoding="utf-8"))
             if not isinstance(marker, dict):
                 raise ValueError("Restored project marker must be an object")

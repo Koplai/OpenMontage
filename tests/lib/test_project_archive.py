@@ -22,6 +22,7 @@ def test_roundtrip_preserves_project_assets_without_overwriting(project, tmp_pat
     restored = restore_project(backup, tmp_path / "restored")
     assert (restored / "project.json").read_bytes() == (project / "project.json").read_bytes()
     assert (restored / "assets/audio.wav").read_bytes() == b"synthetic-not-real-media"
+    assert (restored / "assets/audio.wav").stat().st_mtime_ns == (project / "assets/audio.wav").stat().st_mtime_ns
     with pytest.raises(FileExistsError):
         restore_project(backup, restored)
     with pytest.raises(FileExistsError):
@@ -116,3 +117,32 @@ def test_failed_publication_does_not_delete_new_foreign_files(project, tmp_path,
     with pytest.raises(OSError, match="occupied"):
         restore_project(backup, destination)
     assert (destination / "do-not-delete.txt").read_text() == "other writer"
+
+
+def test_canonical_restore_preserves_exact_paid_approval(tmp_path):
+    from lib.budget import approve_paid_call, paid_execution, prepare_paid_call
+    from lib.checkpoint import init_project
+    from tools.base_tool import BaseTool, ToolResult, ToolRuntime
+    from tools.cost_tracker import CostTracker
+
+    class FakeReportedProvider(BaseTool):
+        name = "archive-fixture-provider"
+        runtime = ToolRuntime.API
+
+        def estimate_cost(self, inputs):
+            return 0.1
+
+        def execute(self, inputs):
+            return ToolResult(success=True, cost_usd=0.1, cost_status="reported")
+
+    project = init_project("fixture", title="Archive fixture", pipeline_type="framework-smoke", pipeline_dir=tmp_path)
+    tool = FakeReportedProvider()
+    request = prepare_paid_call(project, tool, {"project_dir": str(project), "prompt": "fixture"})
+    approve_paid_call(request, approved_usd=0.1, approved_by="test operator")
+    archive = backup_project(project, tmp_path / "saved.zip")
+    project.rename(tmp_path / "old-copy")
+    restore_project(archive, project)
+    with paid_execution(project):
+        result = tool.execute(request.inputs)
+    assert result.success
+    assert CostTracker(cost_log_path=project / "cost_log.json").budget_spent_usd == 0.1
