@@ -72,8 +72,13 @@ def main() -> int:
     wait = 0.3 if args.fast else 2.5
     pid = args.project
     pdir = PROJECTS_DIR / pid
-    if pdir.exists():
+    if pdir.exists() or pdir.is_symlink():
         parser.error("project already exists; choose a new simulation identifier")
+    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        pdir.mkdir()
+    except FileExistsError:
+        parser.error("project was created concurrently; choose another identifier")
 
     print(f"[sim] init_project {pid}")
     init_project(pid, title="The Last Lighthouse", pipeline_type="cinematic",

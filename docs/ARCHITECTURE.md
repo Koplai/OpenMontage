@@ -289,25 +289,34 @@ Checkpoints persist pipeline state as JSON in the project's `pipeline/` director
 
 ## Budget Governance
 
-The `CostTracker` enforces spending controls across the pipeline.
+`lib/budget.py` now enforces project-bound approvals and spending through the
+shared `BaseTool.execute()` wrapper; `CostTracker` persists the transactional
+ledger. See [paid execution](PAID_EXECUTION.md) for the exact request, recovery,
+and legacy-ledger contracts. A declared budget or API key alone is not approval.
 
 ### Lifecycle
 
 ```
-estimate(tool, operation, $) → entry_id
+prepare_paid_call(project, tool, native_inputs) → exact request
+        | human consent to that request and amount
+approve_paid_call(request, approved_usd=estimate, approved_by=operator)
         |
-reserve(entry_id)          # locks budget
-        |
-reconcile(entry_id, $)     # records actual spend
+paid_execution(project): tool.execute(request.inputs)
+        | atomic approval claim + reservation before dispatch
+reconcile reported spend OR retain an unknown hold for recovery
 ```
 
 ### Budget Modes
 
 | Mode | Behavior |
 |------|----------|
-| `observe` | Track costs, no enforcement |
-| `warn` | Log warnings on overruns, allow execution |
-| `cap` | Reject operations that exceed remaining budget |
+| `observe` | Standalone estimate/diagnostic ledger mode |
+| `warn` | Standalone ledger mode that records overrun warnings |
+| `cap` | Default: reject reservations exceeding remaining usable budget |
+
+Real paid execution requires exact approval and enforces the cap in every mode.
+Uncertain outcomes retain holds; automatic retries cannot erase or re-spend a
+consumed approval. Local/free operations remain outside the paid boundary.
 
 ### Controls
 - **Total budget** (default: $10.00)
@@ -352,7 +361,7 @@ llm:
   max_tokens: 4096
 
 budget:
-  mode: warn
+  mode: cap
   total_usd: 10.00
   reserve_pct: 0.10
   single_action_approval_usd: 0.50

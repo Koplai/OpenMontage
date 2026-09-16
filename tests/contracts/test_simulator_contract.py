@@ -24,6 +24,17 @@ def test_simulator_rejects_path_as_identifier(monkeypatch):
         backlot_simulate_run.main()
 
 
+def test_simulator_rejects_dangling_project_symlink(tmp_path, monkeypatch):
+    link = tmp_path / "demo"
+    link.symlink_to(tmp_path / "missing")
+    monkeypatch.setattr(backlot_simulate_run, "PROJECTS_DIR", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["simulate", "--project", "demo", "--fast"])
+    with pytest.raises(SystemExit):
+        backlot_simulate_run.main()
+    assert link.is_symlink()
+    assert not (tmp_path / "missing").exists()
+
+
 def test_simulator_writes_proposal_before_script(tmp_path, monkeypatch):
     monkeypatch.setattr(backlot_simulate_run, "PROJECTS_DIR", tmp_path)
     real_init = backlot_simulate_run.init_project

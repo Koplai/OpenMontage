@@ -79,6 +79,13 @@ spend reservations, or a non-passing final review merely to complete a stage.
 Final delivery must remain bound to the exact reviewed output; draft/diagnostic
 exports are not completed production.
 
+Before the first paid provider call, read `docs/PAID_EXECUTION.md`. Resolve and
+prepare the concrete native request, present it and its estimate, obtain consent,
+then approve that exact request and execute inside `paid_execution(project_dir)`.
+A pipeline-plan approval alone is not an execution reservation. For an explicitly
+approved batch, record approval for each prepared request in that batch. Never
+refund an unknown charge simply because generation or download returned an error.
+
 ```
 Agent reads pipeline manifest (YAML) -> reads stage director skill (MD)
 -> uses tools (Python BaseTool subclasses) -> self-reviews (meta skill)
@@ -576,6 +583,10 @@ Stage contract rules:
 
 - A completed or awaiting-human checkpoint must include the stage's canonical artifact.
 - Canonical artifacts must validate against the JSON schema in `schemas/artifacts/`.
+- For final compose/export, read `docs/DELIVERY_CONTRACT.md`: carry the renderer's
+  passing `final_review`, its content hash and review timestamp, and the matching
+  output hash in `render_report`. Do not fabricate a passing review or reuse one
+  after the output changes.
 - Non-canonical outputs such as media files belong in stage-specific directories.
 - Tools should record seeds/model versions for reproducibility.
 
