@@ -110,6 +110,8 @@ class ToolResult:
     model: Optional[str] = None
     # Unknown failure is not proof of zero billing. Providers may explicitly
     # report estimated/settled cost or prove that dispatch never occurred.
+    # Shared recovery adapters may instead use data.cost_status (known/unknown)
+    # and data.remote_task_id; explicit data uncertainty always retains funds.
     cost_status: str = "unknown"
     cost_entry_id: Optional[str] = None
     provider_request_id: Optional[str] = None

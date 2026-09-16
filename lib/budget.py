@@ -259,22 +259,44 @@ def _invoke_paid(
                 tracker.mark_unknown(entry_id)
             raise
         result.cost_entry_id = entry_id
-        if result.provider_request_id and not settled:
-            tracker.record_submission(entry_id, result.provider_request_id)
+        if not isinstance(result.data, dict):
+            raise ValueError("ToolResult.data must be a dictionary")
+        remote_task_id = result.data.get("remote_task_id")
+        if (
+            result.provider_request_id is not None and remote_task_id is not None
+            and result.provider_request_id != remote_task_id
+        ):
+            raise ValueError("Conflicting remote task identities in ToolResult")
+        provider_request_id = result.provider_request_id if result.provider_request_id is not None else remote_task_id
+        if provider_request_id is not None and not settled:
+            tracker.record_submission(entry_id, provider_request_id)
+            result.provider_request_id = provider_request_id
         actual = CostTracker.money(result.cost_usd)
-        if result.cost_status not in ("unknown", "estimated", "reported", "not_submitted"):
+        # Shared provider recovery metadata may live in data instead of dedicated
+        # fields. Explicit uncertainty overrides the legacy success/positive-cost
+        # convention: delivering media is not evidence of settled billing.
+        aliases = {
+            "known": "reported", "reported": "reported", "unknown": "unknown",
+            "uncertain": "unknown", "estimated": "estimated", "not_submitted": "not_submitted",
+        }
+        raw_status = result.data.get("cost_status", result.cost_status)
+        if not isinstance(raw_status, str) or raw_status not in aliases:
             raise ValueError("Invalid ToolResult.cost_status")
-        if recovery and result.cost_status == "not_submitted":
+        cost_status = aliases[raw_status]
+        explicit_unknown = cost_status == "estimated" or (
+            "cost_status" in result.data and cost_status == "unknown"
+        )
+        if recovery and cost_status == "not_submitted":
             raise ValueError("Recovery cannot declare an earlier submission free")
         if settled:
             # Delivery outcome is distinct from the original generation charge.
             # Never double-count or overwrite already reconciled spend.
             return result
-        if result.cost_status == "not_submitted":
+        if cost_status == "not_submitted":
             if result.success or actual != 0:
                 raise ValueError("not_submitted requires failure and zero reported spend")
             tracker.mark_not_submitted(entry_id)
-        elif result.cost_status == "reported" or (result.success and actual > 0):
+        elif cost_status == "reported" or (result.success and actual > 0 and not explicit_unknown):
             tracker.reconcile(entry_id, actual, success=result.success)
         else:
             # A zero default is not billing evidence, even on success.

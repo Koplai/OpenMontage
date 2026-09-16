@@ -102,12 +102,23 @@ estimation.
 | `cost_entry_id` | Ledger entry used by the gate; set by the wrapper |
 | `provider_request_id` | Accepted remote job ID, if known |
 | `cost_status="unknown"` | Default; failure does not prove zero billing |
-| `cost_status="estimated"` | Approximate generation cost; successful generation reconciles it, failed execution retains the hold |
+| `cost_status="estimated"` | Approximate generation cost, not settled billing; retains the hold even on successful delivery |
 | `cost_status="reported"` | `cost_usd` is the provider's settled/reported cost, including a proven zero |
 | `cost_status="not_submitted"` | Failure was provably before dispatch; zero spend and no remote job ID required |
 
+Shared recovery adapters may instead provide `ToolResult.data` with
+`remote_task_id`, `recovery_state`, and `cost_status` (`known` or `unknown`).
+`known` reconciles the reported `cost_usd`, including a proven zero;
+explicit `unknown` retains the full hold **even on a successful result with a
+positive cost**. This explicit metadata takes precedence over the legacy
+positive-success convention below. `remote_task_id` is persisted as the ledger's
+`provider_request_id`; conflicting IDs fail closed. The gate does not copy the
+rest of `data` into the ledger. Never put credentials, tokens, or secret URLs in
+recovery metadata.
+
 For compatibility, successful results with a positive `cost_usd` reconcile the
-adapter's reported amount. These may still be pricing estimates, not invoices.
+adapter's reported amount only when no explicit unknown/estimated billing
+metadata is supplied. These legacy reports may still be pricing estimates, not invoices.
 A successful zero-cost default is **not** evidence that a paid operation was
 free: the reservation remains outstanding unless explicitly reported.
 
@@ -166,7 +177,9 @@ with paid_execution(project_dir, resume_entry_id=failed_result.cost_entry_id):
 
 The boundary checks the original approval, request and amount, and locks that
 entry's recovery sidecar while the adapter runs. An unknown hold is reconciled
-on successful recovery; already-settled spend is unchanged on re-delivery.
+when recovery provides known billing evidence; explicit unknown/estimated
+charges remain held even after delivery succeeds. Already-settled spend is
+unchanged on re-delivery.
 There is no second reservation or charge. Other request fields remain bound to
 the original approval, including output paths. Provider recovery must not be
 prepared as a new paid call. Unsupported adapters fail closed rather than

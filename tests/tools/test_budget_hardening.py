@@ -558,8 +558,10 @@ def test_real_openai_adapter_governance_with_fake_submission(project, monkeypatc
     assert result.success is not delivery_failure
     client.images.generate.assert_called_once()
     ledger = CostTracker(cost_log_path=project / "cost_log.json")
-    assert ledger.budget_reserved_usd == (.211 if delivery_failure else 0)
-    assert ledger.budget_spent_usd == (0 if delivery_failure else .211)
+    # These adapters explicitly report estimates, not settled billing. Delivery
+    # success does not turn an uncertain generation charge into known spend.
+    assert ledger.budget_reserved_usd == .211
+    assert ledger.budget_spent_usd == 0
 
 
 @pytest.mark.parametrize("state", ["completed", "failed", "refunded"])
@@ -626,13 +628,15 @@ def test_recovery_inputs_cannot_receive_new_generation_approval(project):
         prepare_paid_call(project, FakePaid(), {"recovery_id": "already-submitted"})
 
 
-def test_success_can_report_approximate_cost_explicitly(project):
+def test_explicit_estimate_is_not_settled_billing_evidence(project):
     from lib.budget import paid_execution
     tool = FakePaid(ToolResult(success=True, cost_usd=.2, cost_status="estimated"))
     authorize(project, tool, {})
     with paid_execution(project):
         tool.execute({})
-    assert CostTracker(cost_log_path=project / "cost_log.json").budget_spent_usd == .2
+    ledger = CostTracker(cost_log_path=project / "cost_log.json")
+    assert ledger.budget_spent_usd == 0
+    assert ledger.budget_reserved_usd == .2
 
 
 @pytest.mark.parametrize("mode", list(BudgetMode))
@@ -697,3 +701,52 @@ def test_project_paths_cannot_escape_approved_scope(project, inputs):
     from lib.budget import prepare_paid_call
     with pytest.raises(ApprovalRequiredError):
         prepare_paid_call(project, FakePaid(), inputs)
+
+
+@pytest.mark.parametrize("success", [False, True])
+@pytest.mark.parametrize("field_status", ["unknown", "estimated", "reported"])
+def test_explicit_unknown_data_metadata_always_retains_hold(project, success, field_status):
+    from lib.budget import paid_execution
+    tool = FakePaid(ToolResult(
+        success=success, cost_usd=.2, cost_status=field_status,
+        data={"cost_status": "unknown", "remote_task_id": "accepted-123", "recovery_state": "pending"},
+    ))
+    authorize(project, tool, {})
+    with paid_execution(project):
+        tool.execute({})
+    ledger = CostTracker(cost_log_path=project / "cost_log.json")
+    assert ledger.budget_reserved_usd == .2
+    assert ledger.budget_spent_usd == 0
+    assert ledger.entries[0]["status"] == "unknown"
+    assert ledger.entries[0]["provider_request_id"] == "accepted-123"
+    assert "recovery_state" not in ledger.entries[0]
+
+
+@pytest.mark.parametrize("success", [False, True])
+@pytest.mark.parametrize("actual", [0, .15])
+def test_known_data_metadata_reconciles_reported_cost(project, success, actual):
+    from lib.budget import paid_execution
+    tool = FakePaid(ToolResult(
+        success=success, cost_usd=actual,
+        data={"cost_status": "known", "remote_task_id": "accepted-123"},
+    ))
+    authorize(project, tool, {})
+    with paid_execution(project):
+        tool.execute({})
+    ledger = CostTracker(cost_log_path=project / "cost_log.json")
+    assert ledger.budget_reserved_usd == 0
+    assert ledger.budget_spent_usd == actual
+    assert ledger.entries[0]["status"] == ("completed" if success else "failed")
+    assert ledger.entries[0]["provider_request_id"] == "accepted-123"
+
+
+def test_conflicting_remote_identity_metadata_does_not_release_hold(project):
+    from lib.budget import paid_execution
+    tool = FakePaid(ToolResult(
+        success=True, cost_usd=.2, provider_request_id="original",
+        data={"cost_status": "known", "remote_task_id": "different"},
+    ))
+    authorize(project, tool, {})
+    with paid_execution(project), pytest.raises(ValueError):
+        tool.execute({})
+    assert CostTracker(cost_log_path=project / "cost_log.json").budget_reserved_usd == .2
