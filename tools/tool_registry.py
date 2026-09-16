@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import importlib.util
+import logging
+import os
 import pkgutil
+import shutil
 from types import ModuleType
 from typing import Any, Optional
 
@@ -58,6 +62,7 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, BaseTool] = {}
         self._discovered_packages: set[str] = set()
+        self.discovery_errors: dict[str, str] = {}
 
     def register(self, tool: BaseTool) -> None:
         """Register a tool instance."""
@@ -69,6 +74,7 @@ class ToolRegistry:
         """Clear registered tools and discovery state."""
         self._tools.clear()
         self._discovered_packages.clear()
+        self.discovery_errors.clear()
 
     def register_module(self, module: ModuleType) -> list[str]:
         """Register all concrete BaseTool subclasses defined in a module."""
@@ -85,35 +91,14 @@ class ToolRegistry:
 
     @staticmethod
     def _load_dotenv() -> None:
-        """Load .env file into os.environ if present, so tools can find API keys."""
-        from pathlib import Path
-        import os
-        env_path = Path(__file__).resolve().parent.parent / ".env"
-        if not env_path.is_file():
-            return
-        import re
-        with open(env_path, encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                key = key.strip()
-                value = value.strip()
-                # Quoted value: take the content inside the quotes verbatim.
-                if value[:1] in ("'", '"'):
-                    quote = value[0]
-                    end = value.find(quote, 1)
-                    value = value[1:end] if end != -1 else value[1:]
-                else:
-                    # Strip an inline comment ('#' at line start or after
-                    # whitespace) so "KEY=   # note" yields "" not "# note".
-                    match = re.search(r"(^|\s)#", value)
-                    if match:
-                        value = value[: match.start()]
-                    value = value.strip()
-                if key and key not in os.environ:
-                    os.environ[key] = value
+        """Use the same environment policy as direct provider imports."""
+        from lib.env_loader import load_env
+
+        load_env()
+
+    def _record_import_failure(self, module_name: str, reason: str) -> None:
+        self.discovery_errors[module_name] = reason
+        logging.getLogger(__name__).warning("Tool discovery skipped %s: %s", module_name, reason)
 
     def discover(self, package_name: str = "tools") -> list[str]:
         """Import a package tree and register any concrete tools it defines."""
@@ -124,10 +109,18 @@ class ToolRegistry:
         if package_paths is None:
             return self.register_module(package)
 
-        for module_info in pkgutil.walk_packages(package_paths, f"{package.__name__}."):
+        for module_info in pkgutil.walk_packages(
+            package_paths, f"{package.__name__}.",
+            onerror=lambda name: self._record_import_failure(name, "Package import failed"),
+        ):
             if module_info.name.endswith(".base_tool") or module_info.name.endswith(".tool_registry"):
                 continue
-            module = importlib.import_module(module_info.name)
+            try:
+                module = importlib.import_module(module_info.name)
+            except ImportError as exc:
+                self._record_import_failure(module_info.name, str(exc))
+                continue
+            self.discovery_errors.pop(module_info.name, None)
             discovered.extend(self.register_module(module))
 
         self._discovered_packages.add(package_name)
@@ -137,6 +130,42 @@ class ToolRegistry:
         """Load tool modules once before reporting capabilities."""
         if package_name not in self._discovered_packages:
             self.discover(package_name)
+
+    def configuration_inventory(self) -> dict[str, Any]:
+        """Inspect declared prerequisites without running status probes or subprocesses.
+
+        Discovery still imports trusted tool modules. Configuration presence does not
+        establish authentication, model access, or runtime health.
+        """
+        self.ensure_discovered()
+        entries = []
+        for tool in sorted(self._tools.values(), key=lambda item: item.name):
+            prerequisites = []
+            for dependency in tool.dependencies:
+                kind, _, name = dependency.partition(":")
+                if kind == "env":
+                    present = bool(os.environ.get(name, "").strip())
+                elif kind == "cmd":
+                    present = shutil.which(name) is not None
+                elif kind == "python":
+                    present = importlib.util.find_spec(name.split(".")[0]) is not None
+                else:
+                    present = None
+                prerequisites.append({"dependency": dependency, "present": present})
+            entries.append({
+                "name": tool.name,
+                "capability": tool.capability,
+                "provider": tool.provider,
+                "runtime": tool.runtime.value,
+                "prerequisites": prerequisites,
+                "configuration_status": (
+                    "missing" if any(p["present"] is False for p in prerequisites)
+                    else "configured" if prerequisites and all(p["present"] is True for p in prerequisites)
+                    else "unverified"
+                ),
+                "runtime_verified": False,
+            })
+        return {"tools": entries, "discovery_errors": dict(self.discovery_errors)}
 
     def get(self, name: str) -> Optional[BaseTool]:
         """Get a tool by name."""
@@ -356,7 +385,10 @@ class ToolRegistry:
         # Composition runtimes — lift from video_compose.get_info() since
         # they're the signal the runtime-selection contract depends on.
         comp_runtimes: dict[str, bool] = {}
-        runtime_warnings: list[str] = []
+        runtime_warnings: list[str] = [
+            f"discovery: {module}: {reason}"
+            for module, reason in sorted(self.discovery_errors.items())
+        ]
         vc = self._tools.get("video_compose")
         if vc is not None:
             info = vc.get_info()
