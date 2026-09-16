@@ -147,6 +147,20 @@ def _serialized(pipeline_dir: Path):
         os.close(fd)
 
 
+@contextmanager
+def project_snapshot(project_dir: Path):
+    """Hold cooperating checkpoint writers while a paused project is archived."""
+    project_dir = Path(project_dir).resolve()
+    if not project_dir.is_dir():
+        raise CheckpointValidationError("Cannot snapshot a missing project")
+    with _serialized(project_dir.parent):
+        if (project_dir / ".checkpoint-transaction.json").exists():
+            raise CheckpointValidationError(
+                "Recover the pending checkpoint transaction before creating a backup"
+            )
+        yield
+
+
 def _atomic_json(path: Path, data: dict) -> None:
     # Serialize first: invalid JSON values must not leave even a temp file.
     payload = json.dumps(data, indent=2, allow_nan=False)

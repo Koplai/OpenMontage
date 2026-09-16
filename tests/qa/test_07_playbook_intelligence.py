@@ -277,3 +277,5 @@ for e in errors:
 print(f"\n{'='*60}")
 print(f"PLAYBOOK INTELLIGENCE TEST COMPLETE: {PASS} passed, {FAIL} failed")
 print(f"{'='*60}")
+if FAIL:
+    raise SystemExit(1)

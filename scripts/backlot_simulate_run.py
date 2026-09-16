@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
 import time
@@ -65,12 +66,14 @@ def main() -> int:
     parser.add_argument("--fast", action="store_true")
     parser.add_argument("--cleanup", action="store_true")
     args = parser.parse_args()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", args.project):
+        parser.error("project must be a simple identifier, not a path")
 
     wait = 0.3 if args.fast else 2.5
     pid = args.project
     pdir = PROJECTS_DIR / pid
     if pdir.exists():
-        shutil.rmtree(pdir)
+        parser.error("project already exists; choose a new simulation identifier")
 
     print(f"[sim] init_project {pid}")
     init_project(pid, title="The Last Lighthouse", pipeline_type="cinematic",
@@ -93,6 +96,14 @@ def main() -> int:
     brief = sample_artifact("research_brief")
     brief["topic"] = "The Last Lighthouse"
     cp("research", "completed", {"research_brief": brief})
+
+    cp("proposal", "in_progress", {})
+    proposal = sample_artifact("proposal_packet")
+    decisions = {"version": "1.0", "project_id": pid, "decisions": []}
+    save_artifact("proposal_packet", proposal)
+    save_artifact("decision_log", decisions)
+    cp("proposal", "awaiting_human", {"proposal_packet": proposal, "decision_log": decisions})
+    cp("proposal", "completed", {"proposal_packet": proposal, "decision_log": decisions}, human_approved=True)
 
     # script gates: awaiting_human -> approved
     cp("script", "in_progress", {})

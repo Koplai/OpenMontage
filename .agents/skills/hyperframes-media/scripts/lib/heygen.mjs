@@ -3,13 +3,19 @@
 // heygen-tts.mjs (and matches the hyperframes CLI auth): first usable source
 // wins — $HEYGEN_API_KEY / $HYPERFRAMES_API_KEY → a nearby .env → ~/.heygen/
 // credentials (oauth → Bearer, else api_key → X-Api-Key; $HEYGEN_CONFIG_DIR
-// overrides the dir). Vendored so the skill ships standalone. Pure node.
+// overrides the dir). Project .env inputs use the repository policy. Pure node.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 export const HEYGEN_BASE = "https://api.heygen.com/v3";
+
+const envPolicy = JSON.parse(
+  readFileSync(new URL("../../../../../lib/env_policy.json", import.meta.url), "utf8"),
+);
+const allowedEnvKeys = new Set(envPolicy.allowed_keys);
+const slugEnvKeys = new Set(envPolicy.slug_keys);
 
 // Walk up ≤5 dirs from startDir; load the first .env (shell env always wins).
 export function loadEnvFromDir(startDir) {
@@ -29,8 +35,18 @@ export function loadEnvFromDir(startDir) {
           const q = val[0];
           const end = val.indexOf(q, 1);
           val = end > 0 ? val.slice(1, end) : val.slice(1);
+        } else {
+          val = val.replace(/(^|\s)#.*$/, "").trim();
         }
-        if (!(key in process.env)) process.env[key] = val;
+        if (
+          !allowedEnvKeys.has(key) || val.includes("\0") ||
+          (slugEnvKeys.has(key) && val && !/^[a-z0-9-]+$/.test(val))
+        ) {
+          const safeKey = /^[A-Z][A-Z0-9_]*$/.test(key) ? key : "<invalid name>";
+          console.warn(`Ignoring project .env variable ${safeKey}: not permitted by environment policy.`);
+          continue;
+        }
+        if (!process.env[key]?.trim()) process.env[key] = val;
       }
       return;
     }

@@ -14,7 +14,7 @@ load_env()
 
 from tools.video.video_compose import VideoCompose
 
-OUT = os.path.join(os.path.dirname(__file__), "output")
+OUT = os.environ.get("OPENMONTAGE_QA_OUTPUT_DIR") or os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(OUT, exist_ok=True)
 
 # --- Fixture generation ---
@@ -228,3 +228,6 @@ for name in outputs:
         print(f"\n[{name}] FILE NOT FOUND")
 
 print("\n=== VIDEO COMPOSE TEST COMPLETE ===")
+for result in (r1, r2, r3, r4, r5):
+    if not result.success:
+        raise SystemExit(result.error or "Video composition QA operation failed")

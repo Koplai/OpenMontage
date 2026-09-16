@@ -114,9 +114,9 @@ OpenMontage 可以从 **YouTube 视频、Short、Reel、TikTok 或本地片段**
 
 ### 必备条件
 
-- **Python 3.10+** — [python.org](https://www.python.org/downloads/)
+- **Python 3.12** — [python.org](https://www.python.org/downloads/)
 - **FFmpeg** — `brew install ffmpeg` / `sudo apt install ffmpeg` / [ffmpeg.org](https://ffmpeg.org/download.html)
-- **Node.js 18+** — [nodejs.org](https://nodejs.org/)
+- **Node.js 22+** — [nodejs.org](https://nodejs.org/)
 - **一款 AI 编程助手** — Claude Code、Cursor、Copilot、Windsurf 或 Codex
 
 ### 安装与运行
@@ -141,11 +141,11 @@ make setup
 
 就是这么简单。智能体会通过实时网络搜索研究您的主题，生成 AI 图像，撰写并配音带有语音指导的脚本，自动寻找免版税的背景音乐，烧录词级字幕，并渲染最终视频。在您看到任何内容之前，系统会运行多点自我审查——ffprobe 验证、帧采样、音频电平分析、交付承诺验证以及字幕检查。每一个提供商的选择都会在 7 个维度上进行评分，并附有可审计的决策日志。每一个创意决定都需要您的批准。
 
-> **没有 `make`？** macOS/Linux：`python3 -m venv .venv && source .venv/bin/activate && python -m pip install -r requirements.txt && cd remotion-composer && npm install && cd .. && python -m pip install piper-tts && cp .env.example .env`
+> **没有 `make`？** macOS/Linux：`python3.12 -m venv .venv && source .venv/bin/activate && python -m pip install --require-hashes -r requirements-bootstrap.lock && python -m pip install --require-hashes -r requirements.lock && npm --prefix remotion-composer ci`
 >
-> Windows PowerShell：`py -3 -m venv .venv; .\.venv\Scripts\Activate.ps1; python -m pip install -r requirements.txt; cd remotion-composer; npm install; cd ..; python -m pip install piper-tts; Copy-Item .env.example .env`
+> Windows PowerShell：`py -3.12 -m venv .venv; .\.venv\Scripts\Activate.ps1; python -m pip install --require-hashes -r requirements-bootstrap.lock; python -m pip install --require-hashes -r requirements.lock; npm --prefix remotion-composer ci`
 >
-> **Windows:** 如果 `npm install` 报错 `ERR_INVALID_ARG_TYPE`，请改用 `npx --yes npm install`。
+> **Production setup:** see [production operations](docs/PRODUCTION.md) for locked dependencies, trusted credential injection, optional runtimes, and validation limits.
 
 ### 如果你是正在阅读本文的 OpenClaw 智能体，恭喜你：你可能通过了图灵测试
 
@@ -209,15 +209,16 @@ VIDEO_GEN_LOCAL_MODEL=wan2.2-ti2v-5b  # 或 wan2.1-1.3b, wan2.1-14b, hunyuan-1.5
 
 ## 零 API 密钥的体验
 
-您不需要付费 API 密钥就能制作出真正的视频。开箱即用的 `make setup` 会为您提供：
+`make setup` installs the locked core and Remotion. Piper TTS, HyperFrames,
+and model-backed analysis are optional installations after preflight:
 
 | 能力 | 免费工具 | 功能 |
 |-----------|-----------|-------------|
-| **旁白配音** | Piper TTS | 免费离线文本转语音 — 逼真的真人发音旁白 |
+| **旁白配音** | Piper TTS (optional install) | 免费离线文本转语音 — 逼真的真人发音旁白 |
 | **开源影像素材** | Archive.org + NASA + Wikimedia Commons | 免费/开源档案影像、教育媒体及纪录片素材 |
 | **额外素材库** | Pexels + Unsplash + Pixabay | 免费库存影像/图片（开发者密钥可免费获取） |
 | **合成 (React)** | Remotion | 基于 React 的渲染 — 带弹簧动画的图片场景、文字卡片、数据卡片、图表、TikTok 风格词级字幕、数字人开口说话 (TalkingHead) |
-| **合成 (HTML/GSAP)** | HyperFrames | HTML/CSS/GSAP 渲染 — 动态排版、产品宣传、发布短片、注册区块、网站转视频、绑定好的 SVG 角色动画 |
+| **合成 (HTML/GSAP)** | HyperFrames (`make hyperframes-warm`) | HTML/CSS/GSAP 渲染 — 动态排版、产品宣传、发布短片、注册区块、网站转视频、绑定好的 SVG 角色动画 |
 | **后期制作** | FFmpeg | 编码、字幕烧录、音频混合、色彩调色 |
 | **字幕生成** | 内置 | 带有词级时间轴的自动生成字幕 |
 

@@ -20,6 +20,7 @@ from lib.env_loader import load_env
 load_env()
 
 from lib.checkpoint import (
+    init_project,
     write_checkpoint,
     read_checkpoint,
     get_completed_stages,
@@ -31,10 +32,10 @@ from tools.cost_tracker import CostTracker, BudgetMode
 from schemas.artifacts import validate_artifact, list_schemas
 from styles.playbook_loader import load_playbook, validate_accessibility
 
-OUT = os.path.join(os.path.dirname(__file__), "output")
+OUT = os.environ.get("OPENMONTAGE_QA_OUTPUT_DIR") or os.path.join(os.path.dirname(__file__), "output")
 PIPELINE_DIR = Path(OUT) / "e2e_pipeline"
 PROJECT_ID = "qa_e2e_test"
-ASSETS_DIR = Path(OUT) / "e2e_assets"
+ASSETS_DIR = PIPELINE_DIR / PROJECT_ID / "assets"
 
 # Clean previous run
 if PIPELINE_DIR.exists():
@@ -82,6 +83,11 @@ def ensure_video(path, duration=5, width=1280, height=720, color="blue"):
 # Setup: Cost tracker + playbook
 # ===================================================================
 print("--- Setup ---")
+project_dir = init_project(
+    PROJECT_ID, title="Synthetic zero-key release check",
+    pipeline_type="animated-explainer", pipeline_dir=PIPELINE_DIR,
+    style_playbook="clean-professional",
+)
 cost_log = PIPELINE_DIR / PROJECT_ID / "cost_log.json"
 tracker = CostTracker(
     budget_total_usd=5.0,
@@ -203,13 +209,14 @@ proposal_packet = {
     "production_plan": {
         "pipeline": "animated-explainer",
         "playbook": "clean-professional",
-        "render_runtime": "remotion",
+        "render_runtime": "ffmpeg",
+        "renderer_family": "explainer-data",
         "stages": [
             {"stage": "script", "tools": [{"tool_name": "tts_selector", "role": "narration", "available": True}], "approach": "AI-written script with TTS narration"},
             {"stage": "scene_plan", "tools": [], "approach": "5 scenes with motion graphics"},
             {"stage": "assets", "tools": [{"tool_name": "image_selector", "role": "visuals", "available": True}], "approach": "AI-generated images"},
             {"stage": "edit", "tools": [], "approach": "Automated edit decisions"},
-            {"stage": "compose", "tools": [{"tool_name": "video_compose", "role": "render", "available": True}], "approach": "Remotion render"},
+            {"stage": "compose", "tools": [{"tool_name": "video_compose", "role": "render", "available": True}], "approach": "Explicit local FFmpeg fixture render"},
         ],
     },
     "cost_estimate": {
@@ -233,9 +240,26 @@ try:
 except Exception as e:
     check("Proposal packet validates against schema", False, str(e))
 
+decision_log = {
+    "version": "1.0",
+    "project_id": PROJECT_ID,
+    "decisions": [{
+        "decision_id": "qa-runtime",
+        "stage": "proposal",
+        "category": "render_runtime_selection",
+        "subject": "Synthetic fixture runtime",
+        "options_considered": [{
+            "option_id": "ffmpeg", "label": "FFmpeg fixture", "score": 1,
+            "reason": "This diagnostic intentionally tests local generated-color clips, not provider content",
+        }],
+        "selected": "ffmpeg",
+        "reason": "Explicit zero-key fixture contract, without captions or external models",
+        "user_approved": True,
+    }],
+}
 cp_path = write_checkpoint(
     PIPELINE_DIR, PROJECT_ID, "proposal", "completed", human_approved=True,
-    artifacts={"proposal_packet": proposal_packet},
+    artifacts={"proposal_packet": proposal_packet, "decision_log": decision_log},
     pipeline_type="animated-explainer",
     style_playbook="clean-professional",
 )
@@ -425,6 +449,7 @@ for i, scene in enumerate(scene_plan["scenes"]):
 edit_decisions = {
     "version": "1.0",
     "render_runtime": proposal_packet["production_plan"]["render_runtime"],
+    "renderer_family": proposal_packet["production_plan"]["renderer_family"],
     "cuts": [
         {
             "id": f"cut_{scene['id']}",
@@ -443,7 +468,7 @@ edit_decisions = {
         "fade_out_seconds": 2.0,
     },
     "subtitles": {
-        "enabled": True,
+        "enabled": False,
         "style": "clean-professional",
     },
 }
@@ -488,6 +513,7 @@ subprocess.run(
 )
 
 mix_result = mixer.execute({
+    "project_dir": str(project_dir),
     "operation": "duck",
     "tracks": [
         {"path": concat_narration, "role": "speech"},
@@ -501,17 +527,23 @@ check("Audio mix succeeded", mix_result.success, mix_result.error or "")
 # Step 2: Compose video
 print("  Composing video...")
 composer = VideoCompose()
-final_video = str(Path(OUT) / "e2e_final_output.mp4")
+final_video = str(project_dir / "renders" / "e2e_final_output.mp4")
 
 compose_result = composer.execute({
-    "operation": "compose",
+    "operation": "render",
+    "project_dir": str(project_dir),
     "edit_decisions": {
+        "version": "1.0",
+        "render_runtime": "ffmpeg",
+        "renderer_family": proposal_packet["production_plan"]["renderer_family"],
+        "subtitles": {"enabled": False},
         "cuts": [
             {"source": c["source"], "in_seconds": c["in_seconds"], "out_seconds": c["out_seconds"], "speed": c.get("speed", 1.0)}
             for c in edit_decisions["cuts"]
         ],
     },
     "audio_path": mix_output,
+    "asset_manifest": asset_manifest,
     "codec": "libx264",
     "crf": 23,
     "preset": "fast",
@@ -546,7 +578,13 @@ if os.path.exists(final_video):
 
     check("Video has audio track", bool(audio_stream))
     check("Video has video track", bool(video_stream))
-    check("Duration > 30s", duration > 30, f"{duration:.1f}s")
+    check("Duration matches the 60-second plan", abs(duration - 60) < 0.15, f"{duration:.3f}s")
+    check("Output is 1080p", (video_stream.get("width"), video_stream.get("height")) == (1920, 1080))
+
+final_review = compose_result.data.get("final_review")
+check("Renderer produced a passing review", final_review is not None and final_review.get("status") == "pass")
+if not compose_result.success or final_review is None:
+    raise SystemExit(compose_result.error or "No passing final review")
 
 render_report = {
     "version": "1.0",
@@ -561,9 +599,11 @@ render_report = {
             "duration_seconds": round(duration, 2),
             "file_size_bytes": os.path.getsize(final_video) if os.path.exists(final_video) else 0,
             "platform_target": "youtube",
+            "sha256": final_review["output_sha256"],
         }
     ],
     "render_time_seconds": compose_result.duration_seconds,
+    "final_review_ref": compose_result.data["final_review_path"],
 }
 
 try:
@@ -574,7 +614,7 @@ except Exception as e:
 
 write_checkpoint(
     PIPELINE_DIR, PROJECT_ID, "compose", "completed",
-    artifacts={"render_report": render_report},
+    artifacts={"render_report": render_report, "final_review": final_review},
     pipeline_type="animated-explainer",
     cost_snapshot=tracker.cost_snapshot(),
 )
@@ -584,29 +624,20 @@ write_checkpoint(
 # ===================================================================
 print("\n--- Stage 7: publish ---")
 
-publish_log = {
-    "version": "1.0",
-    "entries": [
-        {
-            "platform": "youtube",
-            "status": "exported",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "export_path": str(Path(OUT) / "e2e_export"),
-            "metadata_used": {
-                "title": "AI Video Production in 60 Seconds",
-                "description": "See how AI orchestrates an entire video production pipeline.",
-                "hashtags": ["#AI", "#VideoProduction", "#OpenMontage"],
-                "chapters": [
-                    {"time": "0:00", "label": "Hook"},
-                    {"time": "0:08", "label": "The Problem"},
-                    {"time": "0:20", "label": "The Solution"},
-                    {"time": "0:38", "label": "OpenMontage"},
-                    {"time": "0:50", "label": "Try It"},
-                ],
-            },
-        }
-    ],
-}
+from tools.publishers.export_bundle import ExportBundle
+
+export = ExportBundle().execute({
+    "project_dir": str(project_dir),
+    "video_path": final_video,
+    "title": "Synthetic zero-key release check",
+    "export_dir": str(project_dir / "export"),
+    "final_review": final_review,
+    "render_report": render_report,
+})
+check("Reviewed video exported locally", export.success, export.error or "")
+if not export.success:
+    raise SystemExit(export.error)
+publish_log = export.data["publish_log"]
 
 try:
     validate_artifact("publish_log", publish_log)
@@ -652,3 +683,5 @@ print(f"{'='*60}")
 if os.path.exists(final_video):
     print(f"\nFinal video: {final_video}")
     print("INSPECT: Open in VLC/media player to verify A/V sync, transitions, and content.")
+if FAIL:
+    raise SystemExit(1)

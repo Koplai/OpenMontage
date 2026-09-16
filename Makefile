@@ -1,4 +1,5 @@
-PYTHON_VERSION ?= 3.10
+PYTHON_VERSION ?= 3.12
+HYPERFRAMES_VERSION := 0.8.40
 VENV_DIR ?= .venv
 BASE_PYTHON ?= $(shell command -v python$(PYTHON_VERSION) 2>/dev/null || command -v python3 2>/dev/null || command -v python 2>/dev/null)
 RUN_PYTHON = $(shell for dir in "$$VIRTUAL_ENV" "$$CONDA_PREFIX" "$(VENV_DIR)"; do if [ -n "$$dir" ] && [ -x "$$dir/bin/python" ]; then printf "%s/bin/python" "$$dir"; exit 0; elif [ -n "$$dir" ] && [ -x "$$dir/Scripts/python.exe" ]; then printf "%s/Scripts/python.exe" "$$dir"; exit 0; fi; done; if [ "$(OS)" = "Windows_NT" ]; then printf "%s/Scripts/python.exe" "$(VENV_DIR)"; else printf "%s/bin/python" "$(VENV_DIR)"; fi)
@@ -6,7 +7,7 @@ PIP = $(RUN_PYTHON) -m pip
 
 .DEFAULT_GOAL := setup
 
-.PHONY: setup install install-dev install-gpu test test-contracts lint clean preflight demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
+.PHONY: setup install install-dev install-gpu test test-contracts test-qa lint clean preflight runtime-preflight audit demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
 
 # ---- Virtual environment ----
 
@@ -43,6 +44,7 @@ ensure-venv:
 		exit 1; \
 	}
 	@$(RUN_PYTHON) -m pip --version >/dev/null 2>&1 || $(RUN_PYTHON) -m ensurepip --upgrade >/dev/null
+	@$(RUN_PYTHON) -c "import pip; assert pip.__version__ == '26.2.1'" 2>/dev/null || $(PIP) install --require-hashes -r requirements-bootstrap.lock
 
 venv: ensure-venv
 	@echo "==> Virtual environment ready."
@@ -53,35 +55,27 @@ venv: ensure-venv
 
 setup: ensure-venv
 	@echo "==> Installing Python dependencies..."
-	$(PIP) install -r requirements.txt
+	$(PIP) install --require-hashes -r requirements.lock
 	@echo ""
 	@echo "==> Installing Remotion composer..."
-	cd remotion-composer && npm install
+	cd remotion-composer && npm ci
 	@echo ""
-	@echo "==> Installing free offline TTS (Piper)..."
-	$(PIP) install piper-tts || echo "  [skip] piper-tts install failed — TTS will use cloud providers instead"
-	@echo ""
-	@echo "==> Installing HyperFrames runtime (cache-warm via npx)..."
-	@echo "    Pulls the 'hyperframes' npm package into the local npx cache so the"
-	@echo "    first render doesn't pay a 30-60s cold-fetch penalty. ~20MB of disk."
-	@npx --yes hyperframes --version >/dev/null 2>&1 && echo "    HyperFrames CLI cached (npx)" || echo "  [skip] HyperFrames cache-warm failed — offline or npm unavailable; first render will fetch on demand"
-	@$(RUN_PYTHON) -c "from tools.video.hyperframes_compose import HyperFramesCompose; HyperFramesCompose._npm_resolve_cache=None; c=HyperFramesCompose()._runtime_check(); print(f'    HyperFrames runtime_available={c[\"runtime_available\"]}, npm={c.get(\"npm_package_version\") or c.get(\"npm_resolve_error\")}'); [print(f'    note: {r}') for r in c['reasons']]" || echo "  [skip] HyperFrames check failed — runtime can be set up later"
-	@echo ""
-	$(RUN_PYTHON) -c "import shutil, os; e=os.path.exists('.env'); shutil.copy('.env.example','.env') if not e else None; print('==> Created .env from .env.example — add your API keys there.' if not e else '==> .env already exists — skipping.')"
+	@echo "==> Optional local TTS/model runtimes are installed separately after preflight."
+	@echo "==> HyperFrames is optional. Run 'make hyperframes-warm' to install version $(HYPERFRAMES_VERSION)."
 	@echo ""
 	@echo "Done! Open this project in your AI coding assistant and start creating."
-	@echo "  Optional: add API keys to .env to unlock cloud providers."
+	@echo "  Supply credentials through your trusted launcher/secret manager. No .env was created."
 	@echo "  Optional: run 'make install-gpu' if you have an NVIDIA GPU."
 	@echo "  Optional: run 'make hyperframes-doctor' to fully validate the HyperFrames runtime."
-	@echo "  Optional: run 'make hyperframes-warm' anytime to refresh the npx cache to the latest hyperframes version."
+	@echo "  Run 'make preflight' for a passive configuration inventory (not a live-provider check)."
 
 # ---- Individual installs ----
 
 install: ensure-venv
-	$(PIP) install -r requirements.txt
+	$(PIP) install --require-hashes -r requirements.lock
 
 install-dev: ensure-venv
-	$(PIP) install -r requirements-dev.txt
+	$(PIP) install --require-hashes -r requirements-dev.lock
 
 install-gpu: ensure-venv
 	$(PIP) install -r requirements-gpu.txt
@@ -95,19 +89,28 @@ test: ensure-venv
 test-contracts: ensure-venv
 	$(RUN_PYTHON) -m pytest tests/contracts/ -v
 
+test-qa: ensure-venv
+	$(RUN_PYTHON) scripts/run_local_qa.py
+
 # ---- Utilities ----
 
-preflight: ensure-venv
+preflight:
+	$(RUN_PYTHON) -c "from tools.tool_registry import registry; import json; print(json.dumps(registry.configuration_inventory(), indent=2))"
+
+runtime-preflight: ensure-venv
 	$(RUN_PYTHON) -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu(), indent=2))"
+
+audit: ensure-venv
+	$(RUN_PYTHON) -m pip_audit --disable-pip --no-deps -r requirements.lock
+	cd remotion-composer && npm audit --omit=dev
 
 hyperframes-doctor: ensure-venv
 	@echo "==> Probing HyperFrames runtime (node/ffmpeg/npx + hyperframes doctor)..."
 	$(RUN_PYTHON) -c "from tools.video.hyperframes_compose import HyperFramesCompose; r=HyperFramesCompose().execute({'operation':'doctor'}); import json; print(json.dumps(r.data, indent=2)); print('OK' if r.success else f'FAIL: {r.error}')"
 
 hyperframes-warm:
-	@echo "==> Refreshing the HyperFrames npx cache to latest..."
-	@echo "    Uses --prefer-online so npx picks up new releases since your last run."
-	npx --yes --prefer-online hyperframes --version
+	@echo "==> Installing approved HyperFrames runtime $(HYPERFRAMES_VERSION)..."
+	npx --yes hyperframes@$(HYPERFRAMES_VERSION) --version
 	@echo "==> Cache warm complete."
 
 demo: ensure-venv
@@ -120,10 +123,7 @@ demo-list: ensure-venv
 	$(RUN_PYTHON) render_demo.py --list
 
 lint: ensure-venv
-	$(RUN_PYTHON) -m py_compile tools/base_tool.py
-	$(RUN_PYTHON) -m py_compile tools/tool_registry.py
-	$(RUN_PYTHON) -m py_compile tools/cost_tracker.py
-	$(RUN_PYTHON) -m py_compile tools/analysis/composition_validator.py
+	$(RUN_PYTHON) -m compileall -q lib tools backlot schemas styles
 
 clean:
 	$(BASE_PYTHON) -c "import pathlib, shutil; excluded=[pathlib.Path('$(VENV_DIR)'), pathlib.Path('venv')]; skip=lambda p: any(p == root or root in p.parents for root in excluded); roots=[p for p in pathlib.Path('.').rglob('__pycache__') if not skip(p)]; [shutil.rmtree(p) for p in roots]; files=[p for p in pathlib.Path('.').rglob('*.pyc') if not skip(p)]; [p.unlink() for p in files]"

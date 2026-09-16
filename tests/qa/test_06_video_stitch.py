@@ -14,7 +14,7 @@ load_env()
 
 from tools.video.video_stitch import VideoStitch
 
-OUT = os.path.join(os.path.dirname(__file__), "output")
+OUT = os.environ.get("OPENMONTAGE_QA_OUTPUT_DIR") or os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(OUT, exist_ok=True)
 
 # --- Fixture generation ---
@@ -223,3 +223,6 @@ for name in outputs:
         print(f"\n[{name}] FILE NOT FOUND")
 
 print("\n=== VIDEO STITCH TEST COMPLETE ===")
+for result in (r1, r2, r3, r4, r5, r6, r7, r8, r9, r10):
+    if not result.success:
+        raise SystemExit(result.error or "Video stitching QA operation failed")

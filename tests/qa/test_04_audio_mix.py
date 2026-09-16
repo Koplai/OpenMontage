@@ -14,7 +14,7 @@ load_env()
 
 from tools.audio.audio_mixer import AudioMixer
 
-OUT = os.path.join(os.path.dirname(__file__), "output")
+OUT = os.environ.get("OPENMONTAGE_QA_OUTPUT_DIR") or os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(OUT, exist_ok=True)
 
 # --- Fixture generation (if test_01/test_03 outputs don't exist) ---
@@ -151,3 +151,6 @@ for name in ["mix_basic.wav", "mix_fades.wav", "mix_ducked.wav", "mix_delayed.wa
         print(f"\n[{name}] FILE NOT FOUND")
 
 print("\n=== AUDIO MIX TEST COMPLETE ===")
+for result in (r1, r2, r3, r4):
+    if not result.success:
+        raise SystemExit(result.error or "Audio QA operation failed")

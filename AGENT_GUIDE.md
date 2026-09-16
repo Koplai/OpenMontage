@@ -71,6 +71,14 @@ The intelligence is in the skills, not in improvised code. An agent that reads t
 
 OpenMontage is an instruction-driven video production system. The AI agent IS the intelligence — it reads instructions (pipeline manifests + stage director skills + meta skills) and drives the pipeline using tools.
 
+For production setup and recovery, read `docs/PRODUCTION.md`. Use the locked
+source-checkout installation and trusted secret injection. `make preflight`
+is a passive configuration inventory; it does not replace the runtime preflight
+or prove provider authentication. Do not bypass execution approvals, unknown
+spend reservations, or a non-passing final review merely to complete a stage.
+Final delivery must remain bound to the exact reviewed output; draft/diagnostic
+exports are not completed production.
+
 ```
 Agent reads pipeline manifest (YAML) -> reads stage director skill (MD)
 -> uses tools (Python BaseTool subclasses) -> self-reviews (meta skill)

@@ -1,19 +1,23 @@
 from setuptools import setup, find_packages
+from pathlib import Path
+
+requirements = [
+    line.split("#", 1)[0].strip()
+    for line in Path(__file__).with_name("requirements.txt").read_text(encoding="utf-8").splitlines()
+    if line.split("#", 1)[0].strip()
+]
 
 setup(
     name="openmontage",
     version="0.1.0",
     description="AI-Orchestrated Video Production Platform",
-    packages=find_packages(),
-    python_requires=">=3.10",
-    install_requires=[
-        "pyyaml>=6.0",
-        "pydantic>=2.0",
-        "jsonschema>=4.20",
-        "python-dotenv>=1.0",
-        "Pillow>=10.0",
-        "requests>=2.31",
-        "google-genai>=1.0.0",
-        "openai>=2.44.0",
-    ],
+    packages=find_packages(exclude=["tests", "tests.*"]),
+    python_requires=">=3.12",
+    install_requires=requirements,
+    package_data={
+        "lib": ["env_policy.json"],
+        "backlot": ["ui/*.html", "ui/*.js", "ui/*.css"],
+        "schemas": ["artifacts/*.json", "checkpoints/*.json", "pipelines/*.json", "styles/*.json", "tools/*.json"],
+        "styles": ["*.yaml"],
+    },
 )
