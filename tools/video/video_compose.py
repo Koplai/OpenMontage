@@ -35,6 +35,7 @@ import functools
 import hashlib
 import json
 import logging
+import os
 import secrets
 import shutil
 import subprocess
@@ -401,11 +402,44 @@ class VideoCompose(BaseTool):
                 result = self._encode(inputs)
             else:
                 return ToolResult(success=False, error=f"Unknown operation: {operation}")
+            if result.data.get("final_review"):
+                self._persist_final_review(
+                    result, Path(inputs.get("output_path") or result.data["final_review"]["output_path"]),
+                )
         except Exception as e:
             return ToolResult(success=False, error=str(e))
 
         result.duration_seconds = round(time.time() - start, 2)
         return result
+
+    @staticmethod
+    def _persist_final_review(result: ToolResult, output_path: Path) -> None:
+        """Publish an invocation-unique review sidecar and link it in the result.
+
+        This runs after output publication, including the atelier path rewrite,
+        so a passing review never persists an invocation-temporary output path.
+        Nonpassing reviews are retained as diagnostics, not deliverables.
+        """
+        review = result.data["final_review"]
+        directory = output_path.expanduser().resolve().parent
+        directory.mkdir(parents=True, exist_ok=True)
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", prefix=f".{output_path.name}.review-",
+                suffix=".json.tmp", dir=directory, delete=False,
+            ) as handle:
+                temporary = Path(handle.name)
+                json.dump(review, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            review_path = temporary.with_suffix("")
+            temporary.replace(review_path)
+            result.data["final_review_path"] = str(review_path)
+            result.artifacts.append(str(review_path))
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
 
@@ -2456,6 +2490,7 @@ class VideoCompose(BaseTool):
 
         Returns a dict conforming to final_review.schema.json.
         """
+        output_path = output_path.expanduser().resolve()
         log = logging.getLogger("video_compose.final_review")
         issues: list[str] = []
 

@@ -573,3 +573,35 @@ def test_hyperframes_default_output_stays_in_workspace(monkeypatch, media, tmp_p
     result = tool.execute({"operation": "render_existing", "workspace_path": str(workspace)})
     assert result.success, result.error
     assert Path(result.data["output"]) == workspace / "renders" / "final.mp4"
+
+
+@pytest.mark.parametrize("duration,accepted", [(2, True), (0.5, False)])
+def test_high_level_persists_linked_review(media, tmp_path, duration, accepted):
+    source, _ = media
+    output = tmp_path / "out.mp4"
+    result = VideoCompose().execute({
+        "operation": "render", "edit_decisions": edit([cut(source, 0, duration)]),
+        "asset_manifest": {"assets": []}, "output_path": str(output),
+        "preset": "ultrafast",
+    })
+    assert result.success is accepted, result.error
+    review_path = Path(result.data["final_review_path"])
+    persisted = json.loads(review_path.read_text())
+    assert persisted == result.data["final_review"]
+    assert Path(persisted["output_path"]).resolve() == output.resolve()
+    assert persisted["output_sha256"] == hashlib.sha256(output.read_bytes()).hexdigest()
+    assert str(review_path) in result.artifacts
+    assert result.data["deliverable_accepted"] is accepted
+
+
+def test_review_persistence_never_overwrites_another_invocation(media, tmp_path):
+    source, _ = media
+    tool = VideoCompose()
+    review = tool._run_final_review(source)
+    first = ToolResult(success=True, data={"final_review": review})
+    second = ToolResult(success=True, data={"final_review": review})
+    tool._persist_final_review(first, source)
+    tool._persist_final_review(second, source)
+    paths = [Path(result.data["final_review_path"]) for result in (first, second)]
+    assert paths[0] != paths[1]
+    assert all(json.loads(path.read_text()) == review for path in paths)

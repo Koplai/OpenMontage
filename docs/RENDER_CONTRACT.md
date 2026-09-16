@@ -144,6 +144,13 @@ Reviews bind to:
 - `output_size_bytes`
 - timezone-aware `reviewed_at`
 
+`VideoCompose.execute()` atomically persists each returned review beside the
+requested output as an invocation-unique `.review-*.json` sidecar. The result's
+`final_review_path` and `artifacts` link it, including nonpassing diagnostic
+reviews. Persistence occurs after successful output-path publication/remapping,
+so passing sidecars refer to the durable output rather than a temporary path.
+Checkpoint remains responsible for the canonical project artifact.
+
 Checkpoint/export enforcement consumes these fields through the shared
 delivery validator. Renderer tests do not replace that downstream boundary.
 R13's replacement-bundle behavior belongs to export, not this renderer.
