@@ -10,6 +10,7 @@ initialization and must continue the production even if it fails.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -28,9 +29,18 @@ def _port() -> int:
 
 
 def _server_alive(port: int) -> bool:
+    from backlot.server import workspace_id
+    from lib.paths import PROJECTS_DIR
+
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1.5) as resp:
-            return resp.status == 200
+            data = json.loads(resp.read(4096))
+            return (
+                resp.status == 200 and isinstance(data, dict)
+                and data.get("ok") is True and data.get("app") == "backlot"
+                and data.get("api_version") == 1
+                and data.get("workspace_id") == workspace_id(PROJECTS_DIR)
+            )
     except Exception:
         return False
 
@@ -66,7 +76,8 @@ def cmd_open(project_id: str | None) -> int:
                 break
             time.sleep(0.4)
         else:
-            print("backlot: server did not come up in time — continuing without the board")
+            print("backlot: no matching Backlot workspace on this port; it may be occupied "
+                  "by another app/workspace. Choose BACKLOT_PORT — continuing without the board")
             return 1
     url = f"http://127.0.0.1:{port}/"
     if project_id:

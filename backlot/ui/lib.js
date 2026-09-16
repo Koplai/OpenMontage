@@ -1,8 +1,12 @@
 // Shared helpers for the Backlot UI.
 
 export async function getJSON(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status} ${url}`);
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    const error = new Error(`Backlot request failed (${res.status})`);
+    error.status = res.status;
+    throw error;
+  }
   return res.json();
 }
 
@@ -69,7 +73,10 @@ export function subscribe(url, onChange) {
   source.onmessage = (msg) => {
     try {
       const data = JSON.parse(msg.data);
-      if (data.type !== "change") return;
+      // hello is sent on EVERY connection, including a reconnect after missed
+      // changes. Heartbeats also reconcile elapsed LIVE/STALLED time and cover
+      // platforms where filesystem watching is unavailable.
+      if (!["change", "hello", "heartbeat"].includes(data.type)) return;
     } catch {
       return;
     }
@@ -78,6 +85,34 @@ export function subscribe(url, onChange) {
   };
   source.onerror = () => { /* EventSource auto-reconnects */ };
   return source;
+}
+
+export function capturePlayback(container) {
+  return [...container.querySelectorAll("video, audio")].map((media) => ({
+    src: media.getAttribute("src"), time: media.currentTime,
+    playing: !media.paused && !media.ended,
+    volume: media.volume, muted: media.muted, rate: media.playbackRate,
+  }));
+}
+
+export function restorePlayback(container, snapshots) {
+  const remaining = [...snapshots];
+  for (const media of container.querySelectorAll("video, audio")) {
+    const index = remaining.findIndex((s) => s.src === media.getAttribute("src"));
+    if (index < 0) continue; // a genuinely different take starts from zero
+    const snapshot = remaining.splice(index, 1)[0];
+    media.volume = snapshot.volume;
+    media.muted = snapshot.muted;
+    media.playbackRate = snapshot.rate;
+    const restore = () => {
+      if (!media.isConnected) return;
+      media.currentTime = Number.isFinite(media.duration)
+        ? Math.min(snapshot.time, media.duration) : snapshot.time;
+      if (snapshot.playing) media.play().catch(() => { /* browser may require a new gesture */ });
+    };
+    if (media.readyState >= 1) restore();
+    else media.addEventListener("loadedmetadata", restore, { once: true });
+  }
 }
 
 // Deterministic pseudo-waveform bars (seeded by a string).

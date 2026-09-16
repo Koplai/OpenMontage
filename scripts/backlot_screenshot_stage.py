@@ -20,6 +20,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -27,12 +28,12 @@ STAGE_DIR = REPO_ROOT / ".backlot" / "screenshot-stage"
 SHOTS_DIR = REPO_ROOT / "docs" / "images" / "backlot"
 PORT = 4790
 
-os.environ["OPENMONTAGE_PROJECTS_DIR"] = str(STAGE_DIR)
-sys.path.insert(0, str(REPO_ROOT))
+if __name__ == "__main__":
+    sys.path.insert(0, str(REPO_ROOT))
 
 from PIL import Image, ImageDraw, ImageFilter  # noqa: E402
 
-from lib.checkpoint import init_project, write_checkpoint  # noqa: E402
+from lib.checkpoint import init_project  # noqa: E402
 from lib.events import emit_event  # noqa: E402
 from tests.contracts.test_phase0_contracts import sample_artifact  # noqa: E402
 
@@ -40,6 +41,26 @@ from tests.contracts.test_phase0_contracts import sample_artifact  # noqa: E402
 # ---------------------------------------------------------------------------
 # generated cinematic frames
 # ---------------------------------------------------------------------------
+
+def write_staged_checkpoint(root: Path, project_id: str, stage: str, status: str,
+                            artifacts: dict, **fields) -> None:
+    """Synthetic UI history, deliberately independent of production writers.
+
+    These are fictional screenshot/test fixtures, not approved productions.
+    The board must also be able to observe legacy and damaged checkpoints.
+    """
+    project = root / project_id
+    path = project / f"checkpoint_{stage}.json"
+    if path.exists():
+        history = project / "history"
+        history.mkdir(exist_ok=True)
+        path.replace(history / f"checkpoint_{stage}_{time.time_ns()}.json")
+    path.write_text(json.dumps({
+        "version": "1.0", "project_id": project_id, "stage": stage,
+        "status": status, "timestamp": datetime.now(timezone.utc).isoformat(),
+        "artifacts": artifacts, **fields,
+    }), encoding="utf-8")
+
 
 def cinematic_frame(path: Path, top, bottom, glow, seed: int, label: str = "") -> None:
     """A moody gradient plate: sky gradient, horizon glow, vignette, grain."""
@@ -167,17 +188,18 @@ def decision_log(pid: str) -> dict:
 
 
 def stage_project(pid: str, title: str, palette: str, scenes: list, *,
-                  state: str, hero: str, takes_scene: str | None = None) -> None:
+                  state: str, hero: str, takes_scene: str | None = None,
+                  stage_dir: Path = STAGE_DIR) -> None:
     """state: 'complete' | 'assets_live' | 'script_gate' | 'early'"""
     top, bottom, glow = PALETTES[palette]
-    pdir = STAGE_DIR / pid
+    pdir = stage_dir / pid
     init_project(pid, title=title, pipeline_type="cinematic",
-                 pipeline_dir=STAGE_DIR, style_playbook="clean-professional")
+                 pipeline_dir=stage_dir, style_playbook="clean-professional")
     art_dir = pdir / "artifacts"
 
     def cp(stage, status, artifacts, **kw):
-        write_checkpoint(STAGE_DIR, pid, stage, status, artifacts,
-                         pipeline_type="cinematic", **kw)
+        write_staged_checkpoint(stage_dir, pid, stage, status, artifacts,
+                                pipeline_type="cinematic", **kw)
         time.sleep(0.02)  # distinct mtimes/timestamps
 
     brief = sample_artifact("research_brief")
@@ -239,7 +261,7 @@ def stage_project(pid: str, title: str, palette: str, scenes: list, *,
                           "success": True, "cost_usd": 0.04 * n_takes, "duration_s": 18.4,
                           "output_path": rel})
         (art_dir / "asset_manifest.json").write_text(json.dumps(manifest, indent=2))
-        write_checkpoint(STAGE_DIR, pid, "assets", "in_progress", {},
+        write_staged_checkpoint(stage_dir, pid, "assets", "in_progress", {},
                          pipeline_type="cinematic",
                          metadata={"partial_progress": {
                              "completed_scene_ids": [s[0] for s in scenes[:i + 1]]}},
@@ -301,19 +323,18 @@ SCENES_PAPER = [
 ]
 
 
-def build_stage() -> None:
-    if STAGE_DIR.exists():
-        shutil.rmtree(STAGE_DIR)
-    STAGE_DIR.mkdir(parents=True)
+def build_stage(stage_dir: Path = STAGE_DIR) -> None:
+    """Build synthetic assets in a new directory; never delete a caller's data."""
+    stage_dir.mkdir(parents=True)
     stage_project("the-last-lighthouse", "The Last Lighthouse", "lighthouse",
-                  SCENES_LIGHTHOUSE, state="complete", hero="sc3", takes_scene="sc3")
+                  SCENES_LIGHTHOUSE, state="complete", hero="sc3", takes_scene="sc3", stage_dir=stage_dir)
     stage_project("signal-in-the-static", "Signal in the Static", "static",
-                  SCENES_STATIC, state="assets_live", hero="sc3")
+                  SCENES_STATIC, state="assets_live", hero="sc3", stage_dir=stage_dir)
     stage_project("the-slow-orchard", "The Slow Orchard", "orchard",
-                  SCENES_ORCHARD, state="script_gate", hero="sc3")
+                  SCENES_ORCHARD, state="script_gate", hero="sc3", stage_dir=stage_dir)
     stage_project("paper-boats", "Paper Boats", "paper",
-                  SCENES_PAPER, state="early", hero="sc3")
-    print(f"[stage] built 4 demo projects in {STAGE_DIR}")
+                  SCENES_PAPER, state="early", hero="sc3", stage_dir=stage_dir)
+    print(f"[stage] built 4 demo projects in {stage_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +351,7 @@ SHOTS = [
 
 def shoot() -> None:
     env = dict(os.environ)
+    env["OPENMONTAGE_PROJECTS_DIR"] = str(STAGE_DIR)
     server = subprocess.Popen(
         [sys.executable, "-m", "backlot", "serve", "--port", str(PORT)],
         env=env, cwd=REPO_ROOT,
@@ -362,6 +384,9 @@ if __name__ == "__main__":
     parser.add_argument("--shoot-only", action="store_true")
     args = parser.parse_args()
     if not args.shoot_only:
+        # Only the explicit screenshot CLI resets its dedicated staging area.
+        if STAGE_DIR.exists():
+            shutil.rmtree(STAGE_DIR)
         build_stage()
     if not args.stage_only:
         shoot()

@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from lib.events import read_events
 from lib.paths import PROJECTS_DIR, REPO_ROOT  # single source of truth (env-overridable)
+from backlot.validation import CHECKPOINT, MARKER, artifact_projection, diagnose, finite_json, project
 
 MEDIA_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 MEDIA_VIDEO_EXT = {".mp4", ".webm", ".mov"}
@@ -38,14 +39,40 @@ LIVE_WINDOW_SECONDS = 5 * 60
 STALL_WINDOW_SECONDS = 10 * 60
 
 
-def _read_json(path: Path) -> Optional[dict]:
-    """Read a JSON file, returning None on any failure."""
+def is_contained(root: Path, path: Path) -> bool:
+    """One resolved-root policy for discovery, JSON, events, and HTTP media."""
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except (ValueError, OSError, RuntimeError):
+        return False
+
+
+def project_dirs(root: Path):
+    if root.is_dir():
+        for entry in sorted(root.iterdir()):
+            if (not entry.name.startswith(("_", ".")) and is_contained(root, entry)
+                    and entry.is_dir()):
+                yield entry
+
+
+def _read_json(path: Path, root: Path, diagnostics: list[dict], *, required=False) -> Optional[dict]:
+    scope = path.relative_to(root).as_posix() if path.is_relative_to(root) else "artifact reference"
+    if not is_contained(root, path):
+        diagnose(diagnostics, scope, "path escapes resolved project root")
+        return None
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else None
-    except (OSError, json.JSONDecodeError, UnicodeError):
-        return None
+        if isinstance(data, dict):
+            return finite_json(data, scope, diagnostics)
+        diagnose(diagnostics, scope, "expected a JSON object")
+    except FileNotFoundError:
+        if required or path.is_symlink():
+            diagnose(diagnostics, scope, "referenced file is missing")
+    except (OSError, json.JSONDecodeError, UnicodeError, RecursionError, ValueError) as exc:
+        diagnose(diagnostics, scope, f"cannot read JSON ({type(exc).__name__})")
+    return None
 
 
 def _rel(project_dir: Path, path: Path) -> str:
@@ -94,7 +121,7 @@ def _load_pipeline_meta(pipeline_type: Optional[str]) -> dict[str, Any]:
     }
 
 
-def _resolve_artifact(project_dir: Path, value: Any) -> Optional[dict]:
+def _resolve_artifact(project_dir: Path, value: Any, diagnostics: list[dict], scope: str) -> Optional[dict]:
     """Checkpoint artifacts may be inline dicts or path strings — resolve both.
 
     Path references are only followed INSIDE the project directory: a
@@ -107,38 +134,43 @@ def _resolve_artifact(project_dir: Path, value: Any) -> Optional[dict]:
         p = Path(value)
         if not p.is_absolute():
             p = project_dir / value
-        try:
-            p.resolve().relative_to(Path(project_dir).resolve())
-        except (ValueError, OSError):
+        if not is_contained(project_dir, p):
+            diagnose(diagnostics, scope, "path escapes resolved project root")
             return None
-        return _read_json(p)
+        return _read_json(p, project_dir, diagnostics, required=True)
+    diagnose(diagnostics, scope, "expected an artifact object or project-local JSON path")
     return None
 
 
-def _collect_checkpoints(project_dir: Path) -> dict[str, dict]:
-    """Current checkpoint per stage (raw dicts, unvalidated by design)."""
+def _collect_checkpoints(project_dir: Path, diagnostics: list[dict]) -> dict[str, dict]:
+    """Current checkpoint per stage, projected for safe board consumption."""
     out: dict[str, dict] = {}
     for path in sorted(project_dir.glob("checkpoint_*.json")):
         stage = path.stem[len("checkpoint_"):]
-        data = _read_json(path)
+        data = _read_json(path, project_dir, diagnostics)
         if data is not None:
-            data["_mtime"] = path.stat().st_mtime
+            data = project(data, CHECKPOINT, path.name, diagnostics)
+            try:
+                data["_mtime"] = path.stat().st_mtime
+            except OSError:
+                diagnose(diagnostics, path.name, "file disappeared during read")
+                data["_mtime"] = 0
             out[stage] = data
     return out
 
 
-def _collect_history(project_dir: Path) -> dict[str, list[dict]]:
+def _collect_history(project_dir: Path, diagnostics: list[dict]) -> dict[str, list[dict]]:
     """Archived checkpoint versions per stage (oldest first)."""
     history_dir = project_dir / "history"
     out: dict[str, list[dict]] = {}
-    if not history_dir.is_dir():
+    if not is_contained(project_dir, history_dir) or not history_dir.is_dir():
         return out
     for path in sorted(history_dir.glob("checkpoint_*.json")):
         m = re.match(r"checkpoint_(.+?)_\d", path.stem)
         stage = m.group(1) if m else path.stem[len("checkpoint_"):]
-        data = _read_json(path)
+        data = _read_json(path, project_dir, diagnostics)
         if data is not None:
-            out.setdefault(stage, []).append(data)
+            out.setdefault(stage, []).append(project(data, CHECKPOINT, f"history/{path.name}", diagnostics))
     return out
 
 
@@ -243,26 +275,27 @@ ARTIFACT_FILES = {
 }
 
 
-def _collect_artifacts(project_dir: Path, checkpoints: dict[str, dict]) -> dict[str, dict]:
+def _collect_artifacts(project_dir: Path, checkpoints: dict[str, dict], diagnostics: list[dict]) -> dict[str, dict]:
     """Artifacts from artifacts/*.json, backfilled from checkpoint payloads."""
     artifacts: dict[str, dict] = {}
     art_dir = project_dir / "artifacts"
     for name, filename in ARTIFACT_FILES.items():
-        data = _read_json(art_dir / filename)
+        data = _read_json(art_dir / filename, project_dir, diagnostics)
         if data is not None:
-            artifacts[name] = data
+            artifacts[name] = artifact_projection(data, name, f"artifacts/{filename}", diagnostics)
     # decision_log historically also lives at project root
     if "decision_log" not in artifacts:
-        data = _read_json(project_dir / "decision_log.json")
+        data = _read_json(project_dir / "decision_log.json", project_dir, diagnostics)
         if data is not None:
-            artifacts["decision_log"] = data
+            artifacts["decision_log"] = artifact_projection(data, "decision_log", "decision_log.json", diagnostics)
     # Backfill from checkpoint-embedded artifacts.
-    for cp in checkpoints.values():
+    for stage, cp in checkpoints.items():
         for name, value in (cp.get("artifacts") or {}).items():
-            if name not in artifacts:
-                resolved = _resolve_artifact(project_dir, value)
-                if resolved is not None:
-                    artifacts[name] = resolved
+            scope = f"checkpoint_{stage}.json.artifacts.{name}"
+            resolved = _resolve_artifact(project_dir, value, diagnostics, scope)
+            if resolved is not None:
+                projected = artifact_projection(resolved, name, scope, diagnostics)
+                artifacts.setdefault(name, projected)
     return artifacts
 
 
@@ -291,7 +324,7 @@ def _resolve_asset_path(project_dir: Path, raw_path: str) -> Optional[Path]:
             candidates.append(project_dir.parent / Path(*parts[1:]))
     for c in candidates:
         try:
-            if c.is_file():
+            if is_contained(project_dir, c) and c.is_file():
                 return c
         except OSError:
             continue
@@ -356,11 +389,11 @@ def _find_scene_snapshot(project_dir: Path, scene_id: str) -> Optional[dict]:
     shows. Accept exact `<scene_id>.<ext>` and `<scene_id>_*.<ext>` forms.
     """
     snap_dir = project_dir / "snapshots"
-    if not scene_id or not snap_dir.is_dir():
+    if not scene_id or not is_contained(project_dir, snap_dir) or not snap_dir.is_dir():
         return None
     try:
         for f in sorted(snap_dir.iterdir()):
-            if not f.is_file() or f.suffix.lower() not in MEDIA_IMAGE_EXT:
+            if not is_contained(project_dir, f) or not f.is_file() or f.suffix.lower() not in MEDIA_IMAGE_EXT:
                 continue
             stem = f.stem
             if stem == scene_id or stem.startswith(f"{scene_id}_"):
@@ -484,7 +517,7 @@ def _build_storyboard(
             "generating_tool": (generating.get(sid) or {}).get("tool"),
         })
 
-    total = scene_plan.get("metadata", {}).get("total_duration_seconds")
+    total = (scene_plan.get("metadata") or {}).get("total_duration_seconds")
     if total is None and cards:
         ends = [c["end_seconds"] for c in cards if c["end_seconds"] is not None]
         total = max(ends) if ends else None
@@ -506,28 +539,31 @@ def _scan_media(project_dir: Path) -> dict[str, list[dict]]:
     music: list[dict] = []
 
     renders_dir = project_dir / "renders"
-    if renders_dir.is_dir():
+    if is_contained(project_dir, renders_dir) and renders_dir.is_dir():
         for f in sorted(renders_dir.iterdir()):
-            if f.suffix.lower() in MEDIA_VIDEO_EXT and f.is_file():
+            if is_contained(project_dir, f) and f.suffix.lower() in MEDIA_VIDEO_EXT and f.is_file():
                 renders.append({"path": _rel(project_dir, f), "size": f.stat().st_size,
                                 "mtime": f.stat().st_mtime})
     # Atelier heuristic: deliverables at project root.
     for f in sorted(project_dir.glob("*.mp4")):
+        if not is_contained(project_dir, f) or not f.is_file():
+            continue
         renders.append({"path": _rel(project_dir, f), "size": f.stat().st_size,
                         "mtime": f.stat().st_mtime, "at_root": True})
     for f in sorted(project_dir.glob("*.mp3")):
-        music.append({"path": _rel(project_dir, f), "at_root": True})
+        if is_contained(project_dir, f) and f.is_file():
+            music.append({"path": _rel(project_dir, f), "at_root": True})
     music_dir = project_dir / "assets" / "music"
-    if music_dir.is_dir():
+    if is_contained(project_dir, music_dir) and music_dir.is_dir():
         for f in sorted(music_dir.iterdir()):
-            if f.suffix.lower() in MEDIA_AUDIO_EXT:
+            if is_contained(project_dir, f) and f.is_file() and f.suffix.lower() in MEDIA_AUDIO_EXT:
                 music.append({"path": _rel(project_dir, f)})
 
     for dirname in ("snapshots", "verify"):
         d = project_dir / dirname
-        if d.is_dir():
+        if is_contained(project_dir, d) and d.is_dir():
             for f in sorted(d.iterdir()):
-                if f.suffix.lower() in MEDIA_IMAGE_EXT and f.is_file():
+                if is_contained(project_dir, f) and f.suffix.lower() in MEDIA_IMAGE_EXT and f.is_file():
                     snapshots.append({"path": _rel(project_dir, f)})
 
     renders.sort(key=lambda r: r.get("mtime", 0), reverse=True)
@@ -547,11 +583,11 @@ def _find_poster(project_dir: Path, state: dict) -> Optional[str]:
     # Common image homes, in order of how representative they usually are.
     for rel_dir in ("assets/images", "assets/frames", "exports", "assets", "."):
         d = (project_dir / rel_dir) if rel_dir != "." else project_dir
-        if not d.is_dir():
+        if not is_contained(project_dir, d) or not d.is_dir():
             continue
         try:
             for f in sorted(d.iterdir()):
-                if f.is_file() and f.suffix.lower() in MEDIA_IMAGE_EXT:
+                if is_contained(project_dir, f) and f.is_file() and f.suffix.lower() in MEDIA_IMAGE_EXT:
                     return _rel(project_dir, f)
         except OSError:
             continue
@@ -569,9 +605,11 @@ def _last_activity(project_dir: Path) -> float:
         candidates = list(project_dir.glob("checkpoint_*.json"))
         candidates.append(project_dir / "events.jsonl")
         art = project_dir / "artifacts"
-        if art.is_dir():
+        if is_contained(project_dir, art) and art.is_dir():
             candidates.extend(art.glob("*.json"))
         for p in candidates:
+            if not is_contained(project_dir, p):
+                continue
             try:
                 latest = max(latest, p.stat().st_mtime)
             except OSError:
@@ -586,15 +624,18 @@ def _last_activity(project_dir: Path) -> float:
 # ---------------------------------------------------------------------------
 
 def load_board_state(project_dir: Path) -> dict[str, Any]:
-    """Full BoardState for one project. Never raises."""
+    """Full BoardState for a caller-selected project root; tolerate damaged data."""
     project_dir = Path(project_dir)
     project_id = project_dir.name
 
-    marker = _read_json(project_dir / "project.json") or {}
-    meta_json = _read_json(project_dir / "meta.json") or {}
+    diagnostics: list[dict] = []
+    marker = project(_read_json(project_dir / "project.json", project_dir, diagnostics) or {},
+                     MARKER, "project.json", diagnostics)
+    meta_json = project(_read_json(project_dir / "meta.json", project_dir, diagnostics) or {},
+                        MARKER, "meta.json", diagnostics)
 
-    checkpoints = _collect_checkpoints(project_dir)
-    history = _collect_history(project_dir)
+    checkpoints = _collect_checkpoints(project_dir, diagnostics)
+    history = _collect_history(project_dir, diagnostics)
 
     pipeline_type = marker.get("pipeline_type")
     if not pipeline_type:
@@ -605,10 +646,19 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
                 break
     pipeline_meta = _load_pipeline_meta(pipeline_type)
 
-    artifacts = _collect_artifacts(project_dir, checkpoints)
-    events = read_events(project_dir, limit=250)
+    artifacts = _collect_artifacts(project_dir, checkpoints, diagnostics)
+    events = []
+    if is_contained(project_dir, project_dir / "events.jsonl"):
+        events = project(finite_json(read_events(project_dir, limit=250), "events.jsonl", diagnostics),
+                         [{"scene_id": "id"}], "events.jsonl", diagnostics)
+    else:
+        diagnose(diagnostics, "events.jsonl", "path escapes resolved project root")
     storyboard = _build_storyboard(project_dir, artifacts, events)
-    media = _scan_media(project_dir)
+    try:
+        media = _scan_media(project_dir)
+    except OSError as exc:
+        diagnose(diagnostics, "media", f"cannot scan media ({type(exc).__name__}); retry on refresh")
+        media = {"renders": [], "snapshots": [], "music": []}
 
     stages = _build_stage_rail(pipeline_meta, checkpoints, history)
 
@@ -653,6 +703,7 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
         "cost": cost,
         "last_activity": last_activity,
         "live": bool(last_activity and (now - last_activity) < LIVE_WINDOW_SECONDS),
+        "diagnostics": diagnostics,
     }
     state["poster"] = _find_poster(project_dir, state)
     return state
@@ -680,6 +731,7 @@ def summarize_project(project_dir: Path) -> dict[str, Any]:
         "completed_count": len(done),
         "render_count": len(state["media"]["renders"]),
         "scene_count": len((state["storyboard"] or {}).get("scenes", [])),
+        "diagnostics": state["diagnostics"],
     }
 
 
@@ -689,9 +741,7 @@ def list_projects(projects_dir: Optional[Path] = None) -> list[dict[str, Any]]:
     if not root.is_dir():
         return []
     summaries = []
-    for entry in sorted(root.iterdir()):
-        if not entry.is_dir() or entry.name.startswith(("_", ".")):
-            continue
+    for entry in project_dirs(root):
         try:
             summaries.append(summarize_project(entry))
         except Exception:

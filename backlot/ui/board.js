@@ -2,7 +2,7 @@
 
 import {
   STAGE_ICONS, el, fmtAgo, fmtClock, fmtDuration, fmtMoney,
-  getJSON, mediaURL, subscribe, thumbURL, waveBars,
+  getJSON, mediaURL, subscribe, thumbURL, waveBars, capturePlayback, restorePlayback,
 } from "/ui/lib.js";
 
 const rawProjectPath = location.pathname.split("/p/")[1] || "";
@@ -58,7 +58,6 @@ function renderSlate(s) {
   ];
 
   const awaiting = s.stages.find((x) => x.status === "awaiting_human");
-  const inProgress = s.stages.find((x) => x.status === "in_progress");
   const stalled = s.stages.find((x) => x.stalled);
   let liveEl;
   if (awaiting) {
@@ -66,7 +65,7 @@ function renderSlate(s) {
   } else if (stalled) {
     liveEl = el("span", { class: "live", style: "color:var(--red)" },
       el("span", { class: "dot", style: "background:var(--red);animation:none" }), "⚠ STALLED?");
-  } else if (s.live || inProgress) {
+  } else if (s.live) {
     liveEl = el("span", { class: "live" }, el("span", { class: "dot" }), "LIVE");
   } else {
     liveEl = el("span", { class: "live idle" }, el("span", { class: "dot" }),
@@ -255,7 +254,7 @@ function scriptSections(script, limit) {
   const nodes = [];
   for (const sec of shown) {
     nodes.push(el("div", { class: "sp-slug" },
-      `${(sec.id || "").toUpperCase()} — ${sec.label || "Section"} `,
+      `${String(sec.id ?? "").toUpperCase()} — ${sec.label || "Section"} `,
       el("span", { class: "tc" }, `${fmtDuration(sec.start_seconds)} – ${fmtDuration(sec.end_seconds)}`)));
     if (sec.text) nodes.push(el("div", { class: "sp-action" }, sec.text));
     if (sec.speaker_directions) nodes.push(el("div", { class: "sp-paren" }, `(${sec.speaker_directions})`));
@@ -821,9 +820,6 @@ function renderRenders(s) {
   if (!renders.length) return null;
   if (activeRender >= renders.length) activeRender = 0;
   const current = renders[activeRender];
-  // Full re-renders (every SSE refresh) must not reset an in-progress
-  // watch: carry playback position/state over to the recreated element.
-  const prev = document.querySelector(".render-hero video");
   const src = mediaURL(s.project_id, current.path);
   // preload="metadata" gives the element its intrinsic aspect ratio (and a
   // poster frame) before playback — without it a portrait 9:16 render sits
@@ -832,13 +828,6 @@ function renderRenders(s) {
   // Click the frame to start playback (controls handle pause/scrub) — the
   // big player was inert to a click on the picture itself.
   video.addEventListener("click", () => { if (video.paused) video.play().catch(() => {}); });
-  if (prev && prev.getAttribute("src") === src && (prev.currentTime > 0 || !prev.paused)) {
-    const t = prev.currentTime;
-    const wasPlaying = !prev.paused && !prev.ended;
-    video.addEventListener("loadedmetadata", () => { video.currentTime = t; }, { once: true });
-    video.setAttribute("preload", "metadata");
-    if (wasPlaying) video.autoplay = true;
-  }
   const versions = el("div", { class: "render-meta" },
     renders.map((r, i) => el("span", {
       class: `v${i === activeRender ? " active" : ""}`,
@@ -1054,11 +1043,18 @@ function tickReplay() {
 function render() {
   if (!state) return;
   const s = replay ? stateAt(state, replay.t) : state;
+  const playback = capturePlayback(app);
   document.title = `Backlot — ${s.title}`;
   document.body.classList.toggle("first", firstPaint);
   firstPaint = false;
   app.innerHTML = "";
   app.append(renderSlate(s));
+  if (s.diagnostics?.length) {
+    app.append(el("div", { class: "notice", role: "alert" },
+      el("div", {},
+        el("b", {}, "DAMAGED PROJECT STATE — readable sections are shown"),
+        el("ul", {}, s.diagnostics.map((d) => el("li", {}, `${d.scope}: ${d.message}`))))));
+  }
   app.append(renderRail(s));
   const replayBar = renderReplayBar(state);
   if (replayBar) app.append(replayBar);
@@ -1097,6 +1093,7 @@ function render() {
       if (section) app.append(section);
     }
   }
+  restorePlayback(app, playback);
 }
 
 // Defensive normalization (F-02): the server contract guarantees these
@@ -1125,18 +1122,35 @@ function normalize(s) {
   return s;
 }
 
+let refreshVersion = 0;
 async function refresh() {
-  state = normalize(await getJSON(`/api/project/${encodeURIComponent(projectId)}/state`));
+  const version = ++refreshVersion;
+  let next;
+  try {
+    next = normalize(await getJSON(`/api/project/${encodeURIComponent(projectId)}/state`));
+  } catch (error) {
+    if (version === refreshVersion) throw error;
+    return; // a newer successful request must not acquire an obsolete error
+  }
+  if (version !== refreshVersion) return;
+  // New renders can sort ahead of the one currently being reviewed.
+  const reviewing = state?.media.renders[activeRender]?.path;
+  const index = next.media.renders.findIndex((r) => r.path === reviewing);
+  if (index >= 0) activeRender = index;
+  state = next;
   render();
 }
 
-refresh().catch((err) => {
-  app.innerHTML = "";
-  app.append(el("div", { class: "empty", style: "margin-top:80px" },
-    el("div", { class: "big" }, "PROJECT NOT FOUND"),
-    el("div", {}, String(err))));
-});
+function showRefreshError(err) {
+  document.getElementById("load-error")?.remove();
+  app.prepend(el("div", { id: "load-error", class: "notice", role: "alert" },
+    el("b", {}, err.status === 404 ? "PROJECT NOT FOUND"
+      : err.status === 400 ? "INVALID PROJECT ID" : "PROJECT STATE UNAVAILABLE"),
+    el("span", {}, `${String(err)}. ${state ? "Showing the last readable state. " : ""}Retrying on connection updates; you can also reload.`)));
+}
+
+refresh().catch(showRefreshError);
 // ?static=1 disables the live feed (screenshots, static exports).
 if (!new URLSearchParams(location.search).has("static")) {
-  subscribe(`/api/project/${encodeURIComponent(projectId)}/events`, () => refresh().catch(console.error));
+  subscribe(`/api/project/${encodeURIComponent(projectId)}/events`, () => refresh().catch(showRefreshError));
 }

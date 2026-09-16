@@ -8,8 +8,12 @@ refetch state. The server never writes to project directories.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import logging
+import threading
 import time
+from time import monotonic
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Optional
@@ -18,16 +22,28 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from backlot.state import PROJECTS_DIR, REPO_ROOT, list_projects, load_board_state, summarize_project
+from backlot.state import PROJECTS_DIR, REPO_ROOT, is_contained, project_dirs, load_board_state, summarize_project
 
 UI_DIR = Path(__file__).resolve().parent / "ui"
 THUMB_CACHE_DIR = REPO_ROOT / ".backlot" / "thumbs"
 THUMB_WIDTHS = (320, 640, 960)
+THUMB_CACHE_MAX_FILES = 256
+THUMB_CACHE_MAX_BYTES = 64 * 1024 * 1024
+_thumb_cache_lock = threading.Lock()
 
 # Paths inside a project whose changes are pure noise for the board.
 _IGNORE_PARTS = {"node_modules", ".git", "__pycache__", ".cache"}
 
 SSE_HEARTBEAT_SECONDS = 15
+SUMMARY_TTL_SECONDS = 15
+SUMMARY_CACHE_MAX = 128
+WATCH_RETRY_SECONDS = 1
+logger = logging.getLogger(__name__)
+
+
+def workspace_id(root: Path) -> str:
+    """Stable identity without disclosing the local absolute path over HTTP."""
+    return hashlib.sha256(str(root.resolve()).encode()).hexdigest()
 
 
 def _ui_html(name: str, assets: tuple[str, ...]) -> HTMLResponse:
@@ -75,35 +91,36 @@ hub = ChangeHub()
 
 # Library summaries are expensive to derive (full state parse per project);
 # cache per project and invalidate from the watcher.
-_summary_cache: dict[str, dict] = {}
+_summary_cache: dict[str, tuple[float, dict]] = {}
+_summary_lock = threading.Lock()
 
 
 def _invalidate_summary(project_id: str) -> None:
-    _summary_cache.pop(project_id, None)
+    with _summary_lock:
+        _summary_cache.pop(project_id, None)
 
 
 def _cached_summaries() -> list[dict]:
-    if not PROJECTS_DIR.is_dir():
-        return []
-    summaries = []
-    for entry in sorted(PROJECTS_DIR.iterdir()):
-        if not entry.is_dir() or entry.name.startswith(("_", ".")):
-            continue
-        cached = _summary_cache.get(entry.name)
-        if cached is None:
-            try:
-                cached = summarize_project(entry)
-            except Exception:
-                cached = {
-                    "project_id": entry.name, "title": entry.name,
-                    "pipeline_type": "unknown", "has_pipeline_state": False,
-                    "poster": None, "live": False, "last_activity": 0,
-                    "active_stage": None, "awaiting_human": False,
-                    "stage_states": [], "completed_count": 0,
-                    "render_count": 0, "scene_count": 0, "error": "unreadable",
-                }
-            _summary_cache[entry.name] = cached
-        summaries.append(cached)
+    # Serialize threaded library requests/invalidation. Age bounds also cover
+    # missed watcher events and LIVE becoming IDLE with no filesystem writes.
+    with _summary_lock:
+        entries = list(project_dirs(PROJECTS_DIR))
+        present = {entry.name for entry in entries}
+        now = monotonic()
+        for key, (created, _) in list(_summary_cache.items()):
+            if key not in present or now - created >= SUMMARY_TTL_SECONDS:
+                _summary_cache.pop(key)
+        summaries = []
+        for entry in entries:
+            cached = _summary_cache.get(entry.name)
+            if cached is None:
+                summary = summarize_project(entry)
+                while len(_summary_cache) >= SUMMARY_CACHE_MAX:
+                    _summary_cache.pop(next(iter(_summary_cache)))
+                _summary_cache[entry.name] = (now, summary)
+            else:
+                summary = cached[1]
+            summaries.append(summary)
     summaries.sort(key=lambda s: (not s["live"], -(s["last_activity"] or 0)))
     return summaries
 
@@ -118,7 +135,7 @@ _PROJECTS_ROOT_STR = _os.path.normcase(str(PROJECTS_DIR.resolve()))
 def _project_of_change(path_str: str) -> Optional[str]:
     """Map a changed filesystem path to a project id (None = irrelevant)."""
     norm = _os.path.normcase(_os.path.normpath(path_str))
-    if not norm.startswith(_PROJECTS_ROOT_STR):
+    if not norm.startswith(_PROJECTS_ROOT_STR + _os.sep):
         return None
     rel = norm[len(_PROJECTS_ROOT_STR):].lstrip("\\/")
     if not rel:
@@ -134,18 +151,24 @@ async def _watch_projects() -> None:
     try:
         from watchfiles import awatch
     except ImportError:
-        return  # watcher unavailable → board still works via manual refresh
-    if not PROJECTS_DIR.is_dir():
+        logger.warning("watchfiles unavailable; Backlot will reconcile on SSE heartbeats")
         return
-    async for changes in awatch(PROJECTS_DIR, recursive=True, step=400):
-        touched: set[str] = set()
-        for _change, path_str in changes:
-            pid = _project_of_change(path_str)
-            if pid:
-                touched.add(pid)
-        for pid in touched:
-            _invalidate_summary(pid)
-            hub.publish(pid)
+    while True:
+        if not PROJECTS_DIR.is_dir():
+            await asyncio.sleep(WATCH_RETRY_SECONDS)
+            continue
+        try:
+            async for changes in awatch(PROJECTS_DIR, recursive=True, step=400,
+                                       yield_on_timeout=True, rust_timeout=1000):
+                if not PROJECTS_DIR.is_dir():
+                    break
+                touched = {pid for _, path in changes if (pid := _project_of_change(path))}
+                for pid in touched:
+                    _invalidate_summary(pid)
+                    hub.publish(pid)
+        except (OSError, RuntimeError):
+            logger.warning("Backlot watcher interrupted; retrying", exc_info=True)
+        await asyncio.sleep(WATCH_RETRY_SECONDS)
 
 
 @asynccontextmanager
@@ -169,16 +192,23 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> dict:
-        return {"ok": True, "app": "backlot"}
+        return {"ok": True, "app": "backlot", "api_version": 1,
+                "workspace_id": workspace_id(PROJECTS_DIR)}
 
     @app.get("/api/projects")
     async def projects() -> list:
-        return await asyncio.to_thread(_cached_summaries)
+        try:
+            return await asyncio.to_thread(_cached_summaries)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="workspace is temporarily unreadable") from exc
 
     @app.get("/api/project/{project_id}/state")
     async def project_state(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
-        return await asyncio.to_thread(load_board_state, project_dir)
+        try:
+            return await asyncio.to_thread(load_board_state, project_dir)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="project state is temporarily unreadable") from exc
 
     @app.get("/api/project/{project_id}/events")
     async def project_events(project_id: str, request: Request) -> StreamingResponse:
@@ -244,13 +274,7 @@ def create_app() -> FastAPI:
     @app.get("/thumb/{project_id}/{file_path:path}")
     async def thumb(project_id: str, file_path: str, w: int = 640) -> FileResponse:
         project_dir = _safe_project_dir(project_id)
-        target = (project_dir / file_path).resolve()
-        try:
-            target.relative_to(project_dir.resolve())
-        except ValueError:
-            raise HTTPException(status_code=403, detail="path escapes project")
-        if not target.is_file():
-            raise HTTPException(status_code=404, detail="media not found")
+        target = _safe_media_path(project_dir, file_path)
         width = min(THUMB_WIDTHS, key=lambda x: abs(x - w))
         cached = await asyncio.to_thread(_thumbnail_for, target, width)
         if cached is None:
@@ -266,13 +290,7 @@ def create_app() -> FastAPI:
     @app.get("/media/{project_id}/{file_path:path}")
     async def media(project_id: str, file_path: str) -> FileResponse:
         project_dir = _safe_project_dir(project_id)
-        target = (project_dir / file_path).resolve()
-        try:
-            target.relative_to(project_dir.resolve())
-        except ValueError:
-            raise HTTPException(status_code=403, detail="path escapes project")
-        if not target.is_file():
-            raise HTTPException(status_code=404, detail="media not found")
+        target = _safe_media_path(project_dir, file_path)
         return FileResponse(target)
 
     # ---- UI ------------------------------------------------------------
@@ -302,6 +320,21 @@ def create_app() -> FastAPI:
         path = request.url.path
         if path == "/" or path.startswith("/ui") or path.startswith("/p/"):
             response.headers["Cache-Control"] = "no-cache"
+        if path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        if path.startswith(("/media/", "/thumb/")):
+            # Executable local compositions get an opaque origin, even when
+            # opened directly (iframe sandbox alone would not cover that).
+            # No allow-same-origin: scripts cannot read the board's API/storage.
+            response.headers["Content-Security-Policy"] = (
+                "sandbox allow-scripts; default-src 'none'; "
+                "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; "
+                "connect-src 'none'; frame-src 'none'; object-src 'none'; "
+                "base-uri 'none'; form-action 'none'"
+            )
         return response
 
     return app
@@ -313,9 +346,21 @@ def _safe_project_dir(project_id: str) -> Path:
     if any(c in project_id for c in "/\\:") or project_id in (".", ".."):
         raise HTTPException(status_code=400, detail="invalid project id")
     project_dir = PROJECTS_DIR / project_id
+    if not is_contained(PROJECTS_DIR, project_dir):
+        raise HTTPException(status_code=403, detail="project escapes resolved workspace root")
     if not project_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"unknown project: {project_id}")
     return project_dir
+
+
+def _safe_media_path(project_dir: Path, file_path: str) -> Path:
+    target = project_dir / file_path
+    if not is_contained(project_dir, target):
+        raise HTTPException(status_code=403, detail="path escapes resolved project root")
+    target = target.resolve()
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="media not found")
+    return target
 
 
 def _sse(payload: dict) -> str:
@@ -329,6 +374,7 @@ def _thumbnail_for(source: Path, width: int) -> Optional[Path]:
     is_video = suffix in {".mp4", ".webm", ".mov"}
     if not (is_image or is_video):
         return None
+    tmp = None
     try:
         import hashlib
         stat = source.stat()
@@ -360,9 +406,40 @@ def _thumbnail_for(source: Path, width: int) -> Optional[Path]:
                 img.thumbnail((width, width * 3))
                 img.save(tmp, "JPEG", quality=82)
         tmp.replace(cached)
+        _prune_thumbnails()
         return cached
     except Exception:
         return None
+    finally:
+        if tmp is not None:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Cannot remove temporary thumbnail", exc_info=True)
+
+
+def _prune_thumbnails() -> None:
+    """Bound regenerated thumbnail versions on disk, newest first."""
+    with _thumb_cache_lock:
+        entries = []
+        for path in THUMB_CACHE_DIR.glob("*.jpg"):
+            try:
+                stat = path.stat()
+                if ".tmp." in path.name:
+                    # Recover leftovers from a killed thumbnail worker, without
+                    # touching active (at most 30s) ffmpeg/Pillow requests.
+                    if time.time() - stat.st_mtime > 120:
+                        path.unlink(missing_ok=True)
+                    continue
+                entries.append((stat, path))
+            except FileNotFoundError:
+                continue
+        entries.sort(key=lambda entry: entry[0].st_mtime_ns, reverse=True)
+        size = 0
+        for index, (stat, path) in enumerate(entries):
+            size += stat.st_size
+            if index >= THUMB_CACHE_MAX_FILES or size > THUMB_CACHE_MAX_BYTES:
+                path.unlink(missing_ok=True)
 
 
 app = create_app()

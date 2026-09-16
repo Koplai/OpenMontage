@@ -67,14 +67,18 @@ function card(p) {
     poster,
     el("div", { class: "lib-body" },
       el("h3", {}, (p.title || p.project_id).toUpperCase()),
+      p.diagnostics?.length ? el("p", { class: "hint" }, "⚠ Damaged state — open for diagnostics") : null,
       meta,
       p.stage_states.length ? miniRail(p.stage_states) : null,
     ),
   );
 }
 
+let refreshVersion = 0;
 async function render() {
+  const version = ++refreshVersion;
   const projects = await getJSON("/api/projects");
+  if (version !== refreshVersion) return;
   document.getElementById("count").textContent = `${projects.length} projects`;
   const liveCount = projects.filter((p) => p.live).length;
   const badge = document.getElementById("liveBadge");
