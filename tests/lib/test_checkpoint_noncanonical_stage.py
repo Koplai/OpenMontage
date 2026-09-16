@@ -5,8 +5,8 @@ unconditionally. Valid stages, however, come from the pipeline manifest
 (`get_pipeline_stages`), which declares stages beyond the 9 canonical ones —
 e.g. `character-animation` adds `character_design` / `rig_plan`. Those pass the
 `stage in valid_stages` guard, then raised an unhandled `KeyError` on the
-canonical lookup, so those stages could never be checkpointed. The lookup is now
-defensive (`.get`), treating a missing entry as "no required artifact".
+canonical lookup, so those stages could never be checkpointed. Manifest-declared
+outputs are now required, including those beyond the canonical stage map.
 """
 
 import sys
@@ -43,11 +43,21 @@ def test_manifest_declares_noncanonical_stage():
     assert "character_design" in stages
 
 
-def test_noncanonical_stage_does_not_raise_keyerror():
-    # character_design has no canonical artifact; completing it with no
-    # artifacts must validate cleanly rather than crash.
+def test_noncanonical_stage_requires_declared_output():
+    with pytest.raises(CheckpointValidationError, match="character_design"):
+        validate_checkpoint(
+            _checkpoint("character_design", "completed", {}, "character-animation")
+        )
     validate_checkpoint(
-        _checkpoint("character_design", "completed", {}, "character-animation")
+        _checkpoint("character_design", "completed", {
+            "character_design": {
+                "version": "1.0", "characters": [{
+                    "id": "host", "role": "host", "body_type": "humanoid",
+                    "style": "flat", "required_emotions": ["happy"],
+                    "required_actions": ["wave"],
+                }],
+            },
+        }, "character-animation")
     )
     validate_checkpoint(
         _checkpoint("rig_plan", "in_progress", {}, "character-animation")

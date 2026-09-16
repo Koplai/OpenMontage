@@ -49,15 +49,19 @@ write_checkpoint(
 
 The checkpoint utility will:
 - Validate the artifact against its schema
+- Require every output in the manifest's `produces` list, including noncanonical stages
+- Bind the write to the initialized project's immutable identity (explicit mismatches and unknown pipelines are errors)
 - Enforce the approval gate (a gated stage cannot be written `completed` without `human_approved=True`)
 - Archive any superseded checkpoint to `projects/<id>/history/` (stage versions and gate transitions are never destroyed)
-- Write the checkpoint JSON to disk
+- Validate cumulative decisions before any mutation, serialize writers, and commit through a recoverable journal
 - Include timestamp and stage metadata
 
 Canonical location: `projects/<project_id>/checkpoint_<stage>.json` — always
 pass the repo's `projects/` directory as `pipeline_dir` (or use
-`lib.checkpoint.PROJECTS_DIR`). Always pass `pipeline_type` — gate enforcement
-reads the manifest through it.
+`lib.checkpoint.PROJECTS_DIR`). Initialize the project first. The writer infers
+`pipeline_type` from `project.json`; an explicit value must match that identity.
+Do not pass `"unknown"` as a fallback or change a marker to switch pipelines.
+Start a new project for a different pipeline or style identity.
 
 At pipeline initialization (before any stage), call `init_project()`:
 
@@ -171,17 +175,21 @@ When `human_approval_default: true`:
 After checkpoint is written and approved (if needed):
 
 ```python
-next_stage = get_next_stage(pipeline_dir, project_name)
+next_stage = get_next_stage(pipeline_dir, project_name)  # infers project.json identity
 ```
 
-This reads all existing checkpoints and returns the next stage that needs to run, or `None` if the pipeline is complete.
+This reads the project's own manifest/checkpoints and returns the next required
+stage, or `None` if the actual pipeline is complete. Absent stages with
+`checkpoint_required: false` do not block progression. If such a stage has a
+checkpoint, it must be completed/approved before advancing. Optional checkpoint
+omission is not permission to ignore the stage's required creative inputs.
 
 ### Step 7: Resume Protocol
 
 At the START of any pipeline run (not just after a stage), always check for existing progress:
 
 ```python
-next_stage = get_next_stage(pipeline_dir, project_name)
+next_stage = get_next_stage(pipeline_dir, project_name)  # never default to a different pipeline
 ```
 
 If `next_stage` is not the first stage:
@@ -198,6 +206,32 @@ If a checkpoint exists with status `"awaiting_human"`:
 1. Inform the human: "Stage [name] is awaiting your approval"
 2. Present the checkpoint data for review
 3. Wait for approval before proceeding
+
+Foreign project/pipeline/stage records and completed stages lacking required
+approval are damaged state, not completed work. Resume rejects them; repair the
+record from real evidence or rerun the stage. Do not edit approval flags merely
+to suppress the error. Legacy projects without a marker can infer identity only
+from mutually consistent records; initialize/confirm the real identity before
+production.
+
+### Final Compose and Export
+
+Completed `compose` is accepted delivery, not just successful file creation.
+Include `render_report` **and** a `final_review` with `status: "pass"`, the exact
+`output_path`, `output_sha256`, and a timezone-aware `reviewed_at` no earlier than
+the file's last modification. The matching `render_report.outputs[]` entry uses
+the existing `path` field plus `sha256`. If an action is provided it must be
+`present_to_user`. The boundary probes and fully decodes the media locally.
+Missing, stale, `revise`, or `fail` reviews cannot complete compose.
+
+To preserve a failed/revision render for inspection, use an `in_progress` or
+`failed` compose checkpoint, not `completed`. `export_bundle` defaults to final
+delivery and requires `final_review`; pass `render_report` too when available.
+Only explicitly requested diagnostic packaging may use `delivery_mode: "draft"`.
+Its publish log says `draft`, never `exported`. A draft is not approval.
+
+See [`docs/DELIVERY_CONTRACT.md`](../../docs/DELIVERY_CONTRACT.md) for the local
+helper API, replacement semantics, and platform/recovery limits.
 
 ### Sample Checkpoint (Reference-Driven Productions)
 

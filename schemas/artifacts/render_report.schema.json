@@ -14,6 +14,7 @@
         "required": ["path", "format", "resolution", "duration_seconds"],
         "properties": {
           "path": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
           "format": { "type": "string" },
           "codec": { "type": "string" },
           "audio_codec": { "type": "string" },

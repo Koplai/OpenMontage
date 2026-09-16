@@ -17,14 +17,17 @@
       "enum": ["completed", "failed", "awaiting_human", "in_progress"]
     },
     "timestamp": { "type": "string", "format": "date-time" },
-    "pipeline_type": { "type": "string", "description": "Pipeline manifest name" },
+    "pipeline_type": {
+      "type": "string",
+      "description": "Pipeline manifest name; initialized project identity is immutable and checked at runtime. 'unknown' is legacy-only, never an explicit write override."
+    },
     "style_playbook": { "type": "string" },
     "checkpoint_policy": { "type": "string", "enum": ["guided", "manual_all", "auto_noncreative"] },
     "human_approval_required": { "type": "boolean" },
     "human_approved": { "type": "boolean" },
     "artifacts": {
       "type": "object",
-      "description": "Map of artifact name to artifact data or file path",
+      "description": "Map of declared output name to artifact data. Registered artifacts must be inline schema-valid objects. Completed compose requires an output-bound passing final_review.",
       "additionalProperties": true
     },
     "review": {

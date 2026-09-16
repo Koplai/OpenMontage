@@ -6,7 +6,6 @@ import json
 import pytest
 
 from lib.checkpoint import (
-    CANONICAL_STAGE_ARTIFACTS,
     CheckpointValidationError,
     HISTORY_DIRNAME,
     PROJECT_MARKER_FILENAME,
@@ -30,15 +29,21 @@ def _minimal_script() -> dict:
 
 def _approve_predecessors(tmp_path, project_id, pipeline_type, *stages) -> None:
     from tests.contracts.test_phase0_contracts import sample_artifact
+    from lib.pipeline_loader import load_pipeline
+    from tests.lib.test_checkpoint_integrity import decision_log
 
+    specs = {s["name"]: s for s in load_pipeline(pipeline_type)["stages"]}
     for stage in stages:
-        artifact_name = CANONICAL_STAGE_ARTIFACTS[stage]
+        artifacts = {
+            name: decision_log(project_id) if name == "decision_log" else sample_artifact(name)
+            for name in specs[stage]["produces"]
+        }
         write_checkpoint(
             tmp_path,
             project_id,
             stage,
             "completed",
-            artifacts={artifact_name: sample_artifact(artifact_name)},
+            artifacts=artifacts,
             pipeline_type=pipeline_type,
             human_approved=True,
         )

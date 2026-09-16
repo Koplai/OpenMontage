@@ -11,6 +11,18 @@
       "type": "string",
       "description": "Path to the rendered output file that was reviewed"
     },
+    "output_sha256": {
+      "type": "string", "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA256 of the exact reviewed output bytes; mandatory for final delivery."
+    },
+    "reviewed_at": {
+      "type": "string", "format": "date-time",
+      "description": "Timezone-aware review completion time, not earlier than output modification; mandatory for final delivery."
+    },
+    "output_size_bytes": {
+      "type": "integer", "minimum": 1,
+      "description": "Optional size of the exact reviewed output."
+    },
     "status": {
       "type": "string",
       "enum": ["pass", "revise", "fail"],
