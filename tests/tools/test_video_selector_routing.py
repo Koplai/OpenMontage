@@ -6,9 +6,8 @@ provider-specific suites), so several routing defects shipped:
 - #3 Seedance dedup race: two tools sharing provider="seedance" (the fal and
   Replicate backends) were keyed by provider string in tool_by_provider, so
   only the first-registered was ever selectable. The other was invisible.
-- #5 preferred_provider had no score-gap gate: it returned the preferred
-  provider on the first ranking match regardless of how far below the top it
-  scored (the comment claimed "unless drastically worse" but nothing enforced it).
+- #5 explicit preferred_provider is a hard execution constraint; score gaps
+  can inform recommendations but cannot authorize a provider substitution.
 - #7 fallback_tools appended image_selector unconditionally — a motion-required
   brief could fall back to an image-only tool.
 
@@ -158,7 +157,7 @@ def test_lower_ranked_same_provider_still_reachable_when_higher_unavailable(rank
 
 
 # ---------------------------------------------------------------------------
-# #5 — preferred_provider score-gap gate
+# #5 — explicit preferred_provider constraint
 # ---------------------------------------------------------------------------
 
 def test_preferred_provider_honored_when_within_gap(rankings):
@@ -176,12 +175,8 @@ def test_preferred_provider_honored_when_within_gap(rankings):
     assert tool.name == "kling_video"
 
 
-def test_preferred_provider_ignored_when_drastically_worse(rankings):
-    """Preferred provider far below top → top-ranked provider wins instead.
-
-    Pre-fix the preferred provider was returned on the first ranking match
-    regardless of the gap (no gate), silently dragging selection to a worse tool.
-    """
+def test_explicit_preferred_provider_is_honored_even_when_scored_lower(rankings):
+    """Recommendations cannot override an approved provider choice."""
     veo = _StubTool("veo_video", "veo")
     kling = _StubTool("kling_video", "kling")
     rankings.extend([
@@ -192,11 +187,11 @@ def test_preferred_provider_ignored_when_drastically_worse(rankings):
     tool, score = VideoSelector()._select_best_tool(
         {"preferred_provider": "kling"}, [veo, kling], {}
     )
-    assert tool.name == "veo_video", "preference must yield to a drastically better top"
+    assert tool.name == "kling_video", "score cannot authorize a provider substitution"
 
 
-def test_preferred_provider_gap_is_configurable(rankings):
-    """A wider gap lets an otherwise-too-low preferred provider win."""
+def test_legacy_score_gap_cannot_override_an_explicit_choice(rankings):
+    """Legacy recommendation controls have no authority over execution."""
     veo = _StubTool("veo_video", "veo")
     kling = _StubTool("kling_video", "kling")
     rankings.extend([
@@ -204,11 +199,11 @@ def test_preferred_provider_gap_is_configurable(rankings):
         _ScoreStub("kling_video", "kling", 0.70),  # 0.25 below top
     ])
 
-    # default gap (0.15) → veo wins
+    # Explicit choice wins regardless of the legacy gap argument.
     tool_default, _ = VideoSelector()._select_best_tool(
         {"preferred_provider": "kling"}, [veo, kling], {}
     )
-    assert tool_default.name == "veo_video"
+    assert tool_default.name == "kling_video"
 
     # widened gap (0.30) → kling wins
     tool_wide, _ = VideoSelector()._select_best_tool(
@@ -217,15 +212,15 @@ def test_preferred_provider_gap_is_configurable(rankings):
     assert tool_wide.name == "kling_video"
 
 
-def test_preferred_provider_not_in_rankings_falls_through(rankings):
-    """An unknown/preferred provider that doesn't rank yields the top provider."""
+def test_unavailable_explicit_provider_fails_closed(rankings):
+    """An unknown/preferred provider must not become another provider."""
     veo = _StubTool("veo_video", "veo")
     rankings.append(_ScoreStub("veo_video", "veo", 0.90))
 
     tool, _ = VideoSelector()._select_best_tool(
         {"preferred_provider": "nonexistent"}, [veo], {}
     )
-    assert tool.name == "veo_video"
+    assert tool is None
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +278,8 @@ def test_estimate_runtime_uses_selected_provider(rankings):
 def test_estimate_cost_zero_when_no_providers():
     sel = VideoSelector()
     sel._providers = lambda: []  # type: ignore[assignment]
-    assert sel.estimate_cost({"prompt": "x"}) == 0.0
+    with pytest.raises(ValueError, match="unavailable"):
+        sel.estimate_cost({"prompt": "x"})
 
 
 def test_ark_local_reference_routes_without_fal_upload(rankings, monkeypatch, tmp_path):

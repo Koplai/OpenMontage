@@ -3,6 +3,16 @@
 from __future__ import annotations
 
 import requests
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def provider_unit_boundary(monkeypatch, tmp_path):
+    """Provider-only tests with fake transport; no runtime bypass exists."""
+    (tmp_path / "project.json").write_text('{"project_id":"test","pipeline_type":"framework-smoke"}')
+    monkeypatch.setattr("lib.budget.governed_execute", lambda tool, inputs, fn, *a, **k:
+                        fn(tool, {**inputs, "project_dir": str(tmp_path)}, *a, **k))
+    monkeypatch.setattr("lib.budget.record_paid_submission", lambda _: None)
 
 
 class _Response:
@@ -27,13 +37,15 @@ def _queue_mocks(monkeypatch):
     def post(url, headers=None, json=None, timeout=None):
         calls["posts"].append((url, json))
         return _Response(
-            {"status_url": "https://status", "response_url": "https://result"}
+            {"request_id": "job-1",
+             "status_url": "https://queue.fal.run/vendor/model/requests/job-1/status",
+             "response_url": "https://queue.fal.run/vendor/model/requests/job-1"}
         )
 
     def get(url, headers=None, timeout=None, params=None):
-        if url == "https://status":
+        if url.endswith("/status"):
             return _Response({"status": "COMPLETED"})
-        if url == "https://result":
+        if url.endswith("/requests/job-1"):
             return _Response({"video": {"url": "https://video"}, "seed": 9})
         return _Response(content=b"fake mp4")
 

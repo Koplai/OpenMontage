@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import sys
 from pathlib import Path
+import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -12,6 +13,15 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from tools._kling.account import reset_account_usage_cache
 from tools._kling.errors import KlingAPIError
 from tools.video.kling_official_video import KlingOfficialVideo
+
+
+@pytest.fixture(autouse=True)
+def provider_unit_boundary(monkeypatch, tmp_path):
+    """Only provider contracts here, with an explicit fake budget boundary."""
+    (tmp_path / "project.json").write_text('{"project_id":"test","pipeline_type":"framework-smoke"}')
+    monkeypatch.setattr("lib.budget.governed_execute", lambda tool, inputs, fn, *a, **k:
+                        fn(tool, {**inputs, "project_dir": str(tmp_path)}, *a, **k))
+    monkeypatch.setattr("lib.budget.record_paid_submission", lambda _: None)
 
 
 def test_registry_discovers_kling_official_video(monkeypatch, isolated_tool_registry):

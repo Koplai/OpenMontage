@@ -20,16 +20,17 @@ class VideoSelector(BaseTool):
     provider = "selector"
     stability = ToolStability.BETA
     runtime = ToolRuntime.HYBRID
+    delegates_paid_execution = True
     agent_skills = ["ai-video-gen", "create-video", "ltx2", "gemini-omni", "atlas-cloud"]
 
     # Operations that REQUIRE motion: an image-only tool (image_selector) is not
     # an acceptable last-resort fallback for these, so fallback_tools_for() drops it.
-    MOTION_REQUIRED_OPERATIONS = frozenset({"image_to_video", "reference_to_video", "video_edit"})
-    # Default score gap for the preferred_provider override (see input_schema).
+    MOTION_REQUIRED_OPERATIONS = frozenset({"image_to_video", "reference_to_video", "video_edit", "edit_video"})
+    # Deprecated recommendation input; never permits an execution substitution.
     PREFERRED_PROVIDER_GAP = 0.15
 
     capabilities = [
-        "text_to_video", "image_to_video", "reference_to_video", "video_edit", "stock_video",
+        "text_to_video", "image_to_video", "reference_to_video", "video_edit", "edit_video", "stock_video",
         "provider_selection", "search_video", "download_video",
     ]
     supports = {
@@ -60,22 +61,19 @@ class VideoSelector(BaseTool):
                 "maximum": 1,
                 "default": 0.15,
                 "description": (
-                    "Max weighted-score gap (0-1) within which an explicit preferred_provider "
-                    "overrides the top-ranked provider. If the preferred provider's best score "
-                    "falls more than this far below the overall top, the preference is ignored "
-                    "and the top-ranked provider wins. Default 0.15 — honors a preference unless "
-                    "it would drag selection to a drastically worse provider."
+                    "Deprecated recommendation hint, ignored during execution. "
+                    "An explicit provider choice is always a hard constraint."
                 ),
             },
             "allowed_providers": {"type": "array", "items": {"type": "string"}},
             "operation": {
                 "type": "string",
-                "enum": ["text_to_video", "image_to_video", "reference_to_video", "video_edit", "rank"],
+                "enum": ["text_to_video", "image_to_video", "reference_to_video", "video_edit", "edit_video", "rank"],
                 "default": "text_to_video",
             },
             "target_operation": {
                 "type": "string",
-                "enum": ["text_to_video", "image_to_video", "reference_to_video", "video_edit"],
+                "enum": ["text_to_video", "image_to_video", "reference_to_video", "video_edit", "edit_video"],
                 "description": "Operation to score when operation='rank'.",
                 "default": "text_to_video",
             },
@@ -91,7 +89,7 @@ class VideoSelector(BaseTool):
             },
             "reference_image_path": {
                 "type": "string",
-                "description": "Local path to a reference image for image_to_video. Auto-uploaded if the provider requires a URL.",
+                "description": "Local reference image. Only routed to providers that implement local-path inputs.",
             },
             "reference_image_url": {
                 "type": "string",
@@ -292,18 +290,98 @@ class VideoSelector(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, object]) -> float:
-        candidates = self._filter_candidates(inputs, self._providers())
-        if not candidates:
+        if inputs.get("operation") == "rank":
             return 0.0
-        tool, _ = self._select_best_tool(inputs, candidates, self._prepare_task_context(inputs))
-        return tool.estimate_cost(inputs) if tool else 0.0
+        tool, adapted = self.resolve_execution(inputs)
+        return tool.estimate_cost(adapted)
 
     def estimate_runtime(self, inputs: dict[str, object]) -> float:
-        candidates = self._providers()
-        if not candidates:
+        if inputs.get("operation") == "rank":
             return 0.0
-        tool, _ = self._select_best_tool(inputs, candidates, self._prepare_task_context(inputs))
-        return tool.estimate_runtime(inputs) if tool else 0.0
+        tool, adapted = self.resolve_execution(inputs)
+        return tool.estimate_runtime(adapted)
+
+    def resolve_execution(self, inputs: dict[str, object]) -> tuple[BaseTool, dict[str, object]]:
+        """Resolve without uploads or generation; the budget gate binds this request."""
+        tool, _ = self._select_best_tool(inputs, self._providers(), self._prepare_task_context(inputs))
+        if tool is None:
+            raise ValueError("Requested video provider/model or operation is unavailable; no substitution permitted")
+        return tool, self._adapt_inputs(tool, inputs)
+
+    @staticmethod
+    def _effective_operation(inputs: dict[str, object]) -> str:
+        if inputs.get("operation") == "rank":
+            return str(inputs.get("target_operation", "text_to_video"))
+        if inputs.get("operation"):
+            return str(inputs["operation"])
+        if any(inputs.get(k) for k in ("reference_image_urls", "reference_image_paths",
+                                      "reference_video_urls", "reference_audio_urls", "image_list", "video_list", "element_list")):
+            return "reference_to_video"
+        if any(inputs.get(k) for k in ("image_url", "image_path", "reference_image_url",
+                                      "reference_image_path", "input_reference_path")):
+            return "image_to_video"
+        if inputs.get("video_url") or inputs.get("video_path"):
+            return "edit_video"
+        return "text_to_video"
+
+    def _adapt_inputs(self, tool: BaseTool, inputs: dict[str, object]) -> dict[str, object]:
+        from lib.provider_jobs import reject_unsupported_media
+
+        adapted = dict(inputs)
+        props = tool.input_schema.get("properties", {})
+        adapted["operation"] = self._provider_operation(tool, self._effective_operation(inputs))
+        if "query" in props:
+            adapted.setdefault("query", adapted.get("prompt", ""))
+        for group in (
+            ("reference_image_path", "image_path", "input_reference_path"),
+            ("reference_image_url", "image_url", "input_reference_url"),
+            ("video_path", "reference_video_path", "input_video_path"),
+            ("video_url", "reference_video_url"),
+            ("model", "model_name"),
+        ):
+            for source in group:
+                if source in adapted and source not in props:
+                    target = next((key for key in group if key in props), None)
+                    if not target:
+                        raise ValueError(f"{tool.name} does not support {source}; cannot drop it")
+                    value = adapted.pop(source)
+                    if target in adapted and adapted[target] != value:
+                        raise ValueError(f"Conflicting {source} and {target}")
+                    adapted[target] = value
+        for key in ("reference_image_urls", "reference_image_paths", "reference_video_urls",
+                    "reference_audio_urls", "video_url", "video_path", "image_list", "video_list",
+                    "element_list", "reference_video_url", "reference_tail_image_path",
+                    "reference_tail_image_url", "end_image_url"):
+            if adapted.get(key) and key not in props:
+                raise ValueError(f"{tool.name} cannot consume {key}; references cannot be stripped")
+        if adapted["operation"] == "text_to_video" and any(adapted.get(key) for key in (
+            "image_path", "reference_image_path", "input_reference_path", "image_url",
+            "reference_image_url", "reference_image_urls", "reference_image_paths", "video_url",
+            "image_list", "video_list", "element_list",
+        )):
+            raise ValueError("text_to_video cannot ignore supplied reference/edit inputs")
+        for key in ("preferred_provider", "allowed_providers", "task_context", "preferred_provider_gap"):
+            adapted.pop(key, None)
+        reject_unsupported_media(adapted, props)
+        normalizer = getattr(tool, "normalize_inputs", None)
+        if callable(normalizer):
+            return normalizer(adapted)
+        for key, spec in props.items():
+            if "default" in spec:
+                adapted.setdefault(key, spec["default"])
+        return adapted
+
+    @staticmethod
+    def _provider_operation(tool: BaseTool, operation: str) -> str:
+        """Translate the two existing edit spellings without changing semantics."""
+        if operation not in {"edit_video", "video_edit"}:
+            return operation
+        props = tool.input_schema.get("properties", {})
+        advertised = set(getattr(tool, "capabilities", [])) | set(props.get("operation", {}).get("enum", []))
+        advertised.update(key for key, value in getattr(tool, "supports", {}).items() if value)
+        if operation in advertised:
+            return operation
+        return "edit_video" if operation == "video_edit" else "video_edit"
 
     def execute(self, inputs: dict[str, object]) -> ToolResult:
         from lib.scoring import rank_providers
@@ -326,36 +404,16 @@ class VideoSelector(BaseTool):
             )
 
         # Normal generation — use scored selection
-        task_context = self._prepare_task_context(inputs)
-        tool, score = self._select_best_tool(inputs, candidates, task_context)
-        if tool is None:
-            return ToolResult(success=False, error="No video generation provider available.")
-
-        # Adapt input keys: stock tools use 'query' while generators use 'prompt'
-        adapted = dict(inputs)
-        if hasattr(tool, 'input_schema'):
-            required = tool.input_schema.get("properties", {})
-            if "query" in required and "query" not in adapted:
-                adapted["query"] = adapted.get("prompt", "")
-
-        # Auto-resolve reference_image_path to a URL for providers that need it
-        if adapted.get("operation") == "image_to_video" and adapted.get("reference_image_path"):
-            tool_props = getattr(tool, "input_schema", {}).get("properties", {})
-            # If the provider uses image_url (not reference_image_path), upload and convert
-            if "image_url" in tool_props and "image_url" not in adapted:
-                try:
-                    from tools.video._shared import upload_image_fal
-                    adapted["image_url"] = upload_image_fal(adapted["reference_image_path"])
-                except Exception as e:
-                    return ToolResult(success=False, error=f"Failed to upload reference image: {e}")
+        try:
+            tool, adapted = self.resolve_execution(inputs)
+        except ValueError as exc:
+            return ToolResult(success=False, error=str(exc))
 
         result = tool.execute(adapted)
         if result.success:
             result.data.setdefault("selected_tool", tool.name)
             result.data["selected_provider"] = tool.provider
-            result.data["selection_reason"] = score.explain() if score else f"Selected {tool.provider} ({tool.name})"
-            if score:
-                result.data["provider_score"] = score.to_dict()
+            result.data["selection_reason"] = f"Resolved {tool.provider} ({tool.name}); rankings are recommendations only"
             result.data.update(self._tool_context_payload(tool))
             result.data["alternatives_considered"] = [
                 t.name for t in candidates
@@ -371,17 +429,15 @@ class VideoSelector(BaseTool):
         candidates: list[BaseTool],
         task_context: dict[str, object],
     ) -> tuple[BaseTool | None, object]:
-        """Select the best provider using scored ranking.
-
-        Respects preferred_provider and environment hints as tie-breakers,
-        but the scoring engine drives the primary selection.
-        """
-        from lib.scoring import rank_providers, ProviderScore
+        """Rank only eligible candidates; an explicit choice is a hard constraint."""
+        from lib.scoring import rank_providers
 
         preferred = inputs.get("preferred_provider", "auto")
         allowed = set(inputs.get("allowed_providers") or [])
         if allowed:
-            candidates = [tool for tool in candidates if tool.provider in allowed]
+            candidates = [tool for tool in candidates if tool.provider in allowed or tool.name in allowed]
+        if preferred != "auto":
+            candidates = [tool for tool in candidates if preferred in {tool.provider, tool.name}]
         candidates = self._filter_candidates(inputs, candidates)
 
         env_hint = os.environ.get("VIDEO_GEN_LOCAL_MODEL", "").lower()
@@ -413,22 +469,14 @@ class VideoSelector(BaseTool):
         def _tool_for(score: object) -> BaseTool | None:
             return selectable_by_name.get(getattr(score, "tool_name", None))
 
-        # If a preferred provider is explicitly requested, honor it ONLY when its
-        # best ranked tool is within a configurable score gap of the overall top.
-        # The prior code returned the preferred provider on the first ranking
-        # match regardless of how far below the top it scored (the comment
-        # claimed "unless drastically worse" but no gate enforced it).
+        # Environment hints are recommendations only; explicit preferences have
+        # already constrained the candidate set, irrespective of score gap.
         if preferred != "auto" and rankings:
-            try:
-                gap = float(inputs.get("preferred_provider_gap", self.PREFERRED_PROVIDER_GAP))
-            except (TypeError, ValueError):
-                gap = self.PREFERRED_PROVIDER_GAP
-            top_score = rankings[0].weighted_score
             preferred_score = next(
-                (s for s in rankings if s.provider == preferred and _tool_for(s) is not None),
+                (s for s in rankings if preferred in {s.provider, s.tool_name} and _tool_for(s) is not None),
                 None,
             )
-            if preferred_score is not None and preferred_score.weighted_score >= top_score - gap:
+            if preferred_score is not None:
                 return _tool_for(preferred_score), preferred_score
 
         # Return the highest-scored selectable provider
@@ -486,15 +534,26 @@ class VideoSelector(BaseTool):
         inputs: dict[str, object],
         candidates: list[BaseTool],
     ) -> list[BaseTool]:
-        exact_model = inputs.get("model")
+        exact_model = inputs.get("model") or inputs.get("model_name")
         if exact_model:
             model_matches = [
                 tool for tool in candidates
-                if exact_model in getattr(tool, "input_schema", {}).get("properties", {}).get("model", {}).get("enum", [])
+                if any(exact_model in getattr(tool, "input_schema", {}).get("properties", {}).get(key, {}).get("enum", [])
+                       for key in ("model", "model_name", "model_variant"))
                 or exact_model in tool.get_info().get("model_catalog", {})
+                or (inputs.get("preferred_provider") not in (None, "auto")
+                    and inputs.get("preferred_provider") in {tool.name, tool.provider}
+                    and any(key in tool.input_schema.get("properties", {})
+                            and "enum" not in tool.input_schema["properties"][key]
+                            for key in ("model", "model_name")))
             ]
-            if model_matches:
-                candidates = model_matches
+            candidates = model_matches
+        for key in ("model_variant", "model_version"):
+            if inputs.get(key):
+                candidates = [tool for tool in candidates
+                              if key in tool.input_schema.get("properties", {})
+                              and ("enum" not in tool.input_schema["properties"][key]
+                                   or inputs[key] in tool.input_schema["properties"][key]["enum"])]
 
         # A caller-supplied custom workflow is provider-specific (ComfyUI graph
         # JSON). Route it only to custom-workflow-capable providers whose server
@@ -502,34 +561,20 @@ class VideoSelector(BaseTool):
         if self._has_custom_workflow(inputs):
             return [t for t in candidates if self._custom_workflow_eligible(t, inputs)]
 
-        operation = inputs.get("operation", "text_to_video")
-        if operation == "rank":
-            operation = inputs.get("target_operation", "text_to_video")
+        operation = self._effective_operation(inputs)
 
         filtered: list[BaseTool] = []
-        matched_operation = False
         for tool in candidates:
             supports = getattr(tool, "supports", {})
             props = getattr(tool, "input_schema", {}).get("properties", {})
 
-            if operation == "image_to_video":
-                if supports.get("image_to_video") or "image_url" in props or "reference_image_url" in props:
-                    matched_operation = True
-                    if self._operation_ready(tool, "image_to_video"):
-                        filtered.append(tool)
-                continue
-
-            if operation == "reference_to_video":
-                if supports.get("reference_to_video") or "reference_image_urls" in props:
-                    matched_operation = True
-                    filtered.append(tool)
-                continue
-
-            matched_operation = True
-            if self._operation_ready(tool, str(operation)):
+            native_operation = self._provider_operation(tool, operation)
+            advertised = (supports.get(native_operation) or native_operation in getattr(tool, "capabilities", [])
+                          or native_operation in props.get("operation", {}).get("enum", []))
+            if advertised and self._operation_ready(tool, native_operation):
                 filtered.append(tool)
 
-        return filtered if matched_operation else candidates
+        return filtered
 
     @staticmethod
     def _operation_ready(tool: BaseTool, operation: str) -> bool:

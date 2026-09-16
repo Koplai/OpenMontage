@@ -10,6 +10,7 @@ import os
 import time
 from pathlib import Path
 from typing import Any
+from lib.provider_jobs import Deadline, ProviderJob, fal_result, safe_get, upload_fal_image, reject_unsupported_media, JOB_INPUT_PROPERTIES
 
 from tools.base_tool import (
     BaseTool,
@@ -17,6 +18,7 @@ from tools.base_tool import (
     ExecutionMode,
     ResourceProfile,
     RetryPolicy,
+    ResumeSupport,
     ToolResult,
     ToolRuntime,
     ToolStability,
@@ -35,6 +37,7 @@ class SeedanceVideo(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
+    resume_support = ResumeSupport.FROM_CHECKPOINT
 
     dependencies = []
     install_instructions = (
@@ -76,6 +79,7 @@ class SeedanceVideo(BaseTool):
         "type": "object",
         "required": ["prompt"],
         "properties": {
+            **JOB_INPUT_PROPERTIES,
             "prompt": {"type": "string"},
             "operation": {
                 "type": "string",
@@ -187,9 +191,7 @@ class SeedanceVideo(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
-    retry_policy = RetryPolicy(
-        max_retries=2, retryable_errors=["rate_limit", "timeout"]
-    )
+    retry_policy = RetryPolicy(max_retries=0)
     idempotency_key_fields = [
         "prompt",
         "model_version",
@@ -216,7 +218,7 @@ class SeedanceVideo(BaseTool):
             return round(
                 0.30
                 * (
-                    5
+                    30
                     if inputs.get("duration", "5") == "auto"
                     else int(inputs.get("duration", "5"))
                 ),
@@ -224,7 +226,7 @@ class SeedanceVideo(BaseTool):
             )
         variant = inputs.get("model_variant", "standard")
         duration = inputs.get("duration", "5")
-        secs = 5 if duration == "auto" else int(duration)
+        secs = 15 if duration == "auto" else int(duration)
         rate = 0.2419 if variant == "fast" else 0.3034
         return round(rate * secs, 2)
 
@@ -234,20 +236,67 @@ class SeedanceVideo(BaseTool):
         variant = inputs.get("model_variant", "standard")
         return 60.0 if variant == "fast" else 120.0
 
+    def normalize_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        reject_unsupported_media(inputs, {*self.input_schema["properties"],
+                                          "reference_image_path", "reference_image_url"})
+        normalized = dict(inputs)
+        for source, target in (("reference_image_path", "image_path"), ("reference_image_url", "image_url")):
+            if inputs.get(source):
+                if inputs.get(target) and inputs[target] != inputs[source]:
+                    raise ValueError(f"Conflicting {source} and {target}")
+                normalized[target] = normalized.pop(source)
+        refs = any(normalized.get(k) for k in (
+            "reference_image_urls", "reference_image_paths", "reference_video_urls", "reference_audio_urls"))
+        single = normalized.get("image_url") or normalized.get("image_path")
+        normalized.setdefault("operation", "reference_to_video" if refs else (
+            "image_to_video" if single else "text_to_video"))
+        for key in ("model_version", "model_variant", "duration", "resolution", "aspect_ratio", "generate_audio"):
+            normalized.setdefault(key, self.input_schema["properties"][key]["default"])
+        normalized["duration"] = str(normalized["duration"])
+        for key in ("operation", "model_version", "model_variant", "duration", "resolution", "aspect_ratio"):
+            if normalized[key] not in self.input_schema["properties"][key]["enum"]:
+                raise ValueError(f"Unsupported Seedance {key}")
+        if normalized["model_version"] == "2.5" and normalized["model_variant"] == "fast":
+            raise ValueError("Seedance 2.5 has no fast endpoint")
+        if inputs.get("model") or inputs.get("model_name"):
+            raise ValueError("Seedance selects models through model_version/model_variant, not model/model_name")
+        operation = normalized["operation"]
+        if operation == "text_to_video" and (refs or single or normalized.get("end_image_url")):
+            raise ValueError("text_to_video cannot ignore supplied reference inputs")
+        if operation == "image_to_video" and (not single or refs):
+            raise ValueError("image_to_video requires a start image, not reference arrays")
+        if operation == "reference_to_video" and (not refs or single or normalized.get("end_image_url")):
+            raise ValueError("reference_to_video requires reference arrays, not start/end images")
+        if normalized.get("video_url") or normalized.get("video_path"):
+            raise ValueError("Seedance does not implement video editing")
+        for key, limit in (("reference_image", 30), ("reference_video", 10), ("reference_audio", 10)):
+            maximum = limit if normalized["model_version"] == "2.5" else (9 if key == "reference_image" else 3)
+            count = len(normalized.get(key + "_urls") or []) + len(normalized.get(key + "_paths") or [])
+            if count > maximum:
+                raise ValueError(f"Seedance {key} limit is {maximum}")
+        if normalized["model_version"] == "2.5" and operation == "image_to_video":
+            normalized["aspect_ratio"] = "auto"
+        return normalized
+
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         api_key = self._get_api_key()
         if not api_key:
             return ToolResult(
                 success=False,
                 error="FAL_KEY not set. " + self.install_instructions,
+                cost_status="not_submitted",
             )
 
         import requests
 
-        start = time.time()
-        operation = inputs.get("operation", "text_to_video")
-        model_version = inputs.get("model_version", "2.0")
-        variant = inputs.get("model_variant", "standard")
+        start = time.monotonic()
+        try:
+            inputs = self.normalize_inputs(inputs)
+        except ValueError as exc:
+            return ToolResult(success=False, error=str(exc), cost_status="not_submitted")
+        operation = inputs["operation"]
+        model_version = inputs["model_version"]
+        variant = inputs["model_variant"]
         operation_path = operation.replace("_", "-")
 
         if model_version == "2.5":
@@ -262,117 +311,42 @@ class SeedanceVideo(BaseTool):
         else:
             model_path = f"bytedance/seedance-2.0/{operation_path}"
 
-        payload: dict[str, Any] = {"prompt": inputs["prompt"]}
-
-        if inputs.get("duration"):
-            payload["duration"] = inputs["duration"]
-        if inputs.get("aspect_ratio"):
-            payload["aspect_ratio"] = inputs["aspect_ratio"]
-        if inputs.get("resolution"):
-            payload["resolution"] = inputs["resolution"]
-        if "generate_audio" in inputs:
-            payload["generate_audio"] = inputs["generate_audio"]
-        if inputs.get("seed") is not None:
-            payload["seed"] = inputs["seed"]
-
-        if operation == "image_to_video":
-            if inputs.get("image_url"):
-                payload["image_url"] = inputs["image_url"]
-            elif inputs.get("image_path"):
-                from tools.video._shared import upload_image_fal
-
-                payload["image_url"] = upload_image_fal(inputs["image_path"])
-            if inputs.get("end_image_url"):
-                payload["end_image_url"] = inputs["end_image_url"]
-            if model_version == "2.5":
-                payload["aspect_ratio"] = "auto"
-
-        if operation == "reference_to_video":
-            ref_image_urls = list(inputs.get("reference_image_urls") or [])
-            for local_path in inputs.get("reference_image_paths") or []:
-                from tools.video._shared import upload_image_fal
-
-                ref_image_urls.append(upload_image_fal(local_path))
-            max_images = 30 if model_version == "2.5" else 9
-            max_videos = 10 if model_version == "2.5" else 3
-            max_audios = 10 if model_version == "2.5" else 3
-            if len(ref_image_urls) > max_images:
-                return ToolResult(
-                    success=False,
-                    error=f"Seedance {model_version} reference_to_video accepts at most {max_images} reference images; got {len(ref_image_urls)}",
-                )
-            ref_video_urls = list(inputs.get("reference_video_urls") or [])
-            if len(ref_video_urls) > max_videos:
-                return ToolResult(
-                    success=False,
-                    error=f"Seedance {model_version} reference_to_video accepts at most {max_videos} reference videos; got {len(ref_video_urls)}",
-                )
-            ref_audio_urls = list(inputs.get("reference_audio_urls") or [])
-            if len(ref_audio_urls) > max_audios:
-                return ToolResult(
-                    success=False,
-                    error=f"Seedance {model_version} reference_to_video accepts at most {max_audios} reference audio clips; got {len(ref_audio_urls)}",
-                )
-            if ref_image_urls:
-                payload[
-                    "image_urls" if model_version == "2.5" else "reference_image_urls"
-                ] = ref_image_urls
-            if ref_video_urls:
-                payload[
-                    "video_urls" if model_version == "2.5" else "reference_video_urls"
-                ] = ref_video_urls
-            if ref_audio_urls:
-                payload[
-                    "audio_urls" if model_version == "2.5" else "reference_audio_urls"
-                ] = ref_audio_urls
-
-        headers = {
-            "Authorization": f"Key {api_key}",
-            "Content-Type": "application/json",
-        }
-
+        job = None
         try:
-            submit_resp = requests.post(
-                f"https://queue.fal.run/{model_path}",
-                headers=headers,
-                json=payload,
-                timeout=30,
-            )
-            submit_resp.raise_for_status()
-            queue_data = submit_resp.json()
-            status_url = queue_data["status_url"]
-            response_url = queue_data["response_url"]
-
-            while True:
-                time.sleep(5)
-                status_resp = requests.get(status_url, headers=headers, timeout=15)
-                status_resp.raise_for_status()
-                status = status_resp.json().get("status", "UNKNOWN")
-                if status == "COMPLETED":
-                    break
-                if status in ("FAILED", "CANCELLED"):
-                    return ToolResult(
-                        success=False,
-                        error=f"Seedance {model_version} video generation {status.lower()}",
-                    )
-
-            result_resp = requests.get(response_url, headers=headers, timeout=30)
-            result_resp.raise_for_status()
-            data = result_resp.json()
-
-            video_url = data["video"]["url"]
-            video_response = requests.get(video_url, timeout=120)
-            video_response.raise_for_status()
-
-            output_path = Path(inputs.get("output_path", "seedance_output.mp4"))
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(video_response.content)
-
-        except Exception as e:
-            return ToolResult(
-                success=False,
-                error=f"Seedance {model_version} video generation failed: {e}",
-            )
+            deadline = Deadline(inputs.get("timeout_seconds", 900))
+            job = ProviderJob.open(inputs, self.provider, model_path, self.estimate_cost(inputs))
+            job.require_resumable()
+            payload = {}
+            if job.should_submit:
+                payload = {key: inputs[key] for key in
+                           ("prompt", "duration", "aspect_ratio", "resolution", "generate_audio")}
+                if inputs.get("seed") is not None:
+                    payload["seed"] = inputs["seed"]
+                if operation == "image_to_video":
+                    payload["image_url"] = inputs.get("image_url") or upload_fal_image(
+                        inputs["image_path"], api_key, deadline)
+                    if inputs.get("end_image_url"):
+                        payload["end_image_url"] = inputs["end_image_url"]
+                if operation == "reference_to_video":
+                    images = list(inputs.get("reference_image_urls") or [])
+                    images.extend(upload_fal_image(path, api_key, deadline)
+                                  for path in inputs.get("reference_image_paths") or [])
+                    for kind, values in (
+                        ("image", images), ("video", inputs.get("reference_video_urls")),
+                        ("audio", inputs.get("reference_audio_urls")),
+                    ):
+                        if values:
+                            key = f"{kind}_urls" if model_version == "2.5" else f"reference_{kind}_urls"
+                            payload[key] = values
+            if not job.record.get("staged"):
+                data = fal_result(job, model_path, payload, api_key, deadline, inputs.get("poll_interval", 5))
+                job.stage([safe_get(requests.get, data["video"]["url"], deadline).content])
+                if isinstance(data.get("seed"), int):
+                    job.update(seed=data["seed"])
+            output_path = Path(inputs.get("output_path", job.root / "seedance_output.mp4"))
+            job.deliver([output_path])
+        except Exception as exc:
+            return job.failure(exc) if job else ToolResult(success=False, error=str(exc), cost_status="not_submitted")
 
         from tools.video._shared import probe_output
 
@@ -389,14 +363,23 @@ class SeedanceVideo(BaseTool):
                 "aspect_ratio": inputs.get("aspect_ratio", "16:9"),
                 "resolution": inputs.get("resolution", "720p"),
                 "generate_audio": inputs.get("generate_audio", True),
-                "seed": data.get("seed"),
+                "seed": job.record.get("seed"),
                 "output": str(output_path),
                 "output_path": str(output_path),
                 "format": "mp4",
+                **job.metadata(),
                 **probed,
             },
             artifacts=[str(output_path)],
             cost_usd=self.estimate_cost(inputs),
-            duration_seconds=round(time.time() - start, 2),
+            duration_seconds=round(time.monotonic() - start, 2),
             model=model_path,
+            cost_status="estimated",
+            provider_request_id=job.job_id,
         )
+
+    def validate_paid_recovery(self, inputs: dict[str, Any]) -> None:
+        inputs = self.normalize_inputs(inputs)
+        fast = "fast/" if inputs["model_variant"] == "fast" else ""
+        endpoint = f"bytedance/seedance-{inputs['model_version']}/{fast}{inputs['operation'].replace('_', '-')}"
+        ProviderJob.validate_recovery(inputs, self.provider, endpoint, self.estimate_cost(inputs))

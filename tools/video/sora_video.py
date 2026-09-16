@@ -8,6 +8,7 @@ import os
 import time
 from pathlib import Path
 from typing import Any
+from lib.provider_jobs import Deadline, ProviderJob, safe_sdk_read, reject_unsupported_media, JOB_INPUT_PROPERTIES
 
 from tools.base_tool import (
     BaseTool,
@@ -15,6 +16,7 @@ from tools.base_tool import (
     ExecutionMode,
     ResourceProfile,
     RetryPolicy,
+    ResumeSupport,
     ToolResult,
     ToolRuntime,
     ToolStability,
@@ -42,6 +44,7 @@ class SoraVideo(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
+    resume_support = ResumeSupport.FROM_CHECKPOINT
 
     dependencies = []
     install_instructions = (
@@ -71,6 +74,7 @@ class SoraVideo(BaseTool):
         "type": "object",
         "required": ["prompt"],
         "properties": {
+            **JOB_INPUT_PROPERTIES,
             "prompt": {"type": "string"},
             "operation": {
                 "type": "string",
@@ -117,7 +121,7 @@ class SoraVideo(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=1000, network_required=True
     )
-    retry_policy = RetryPolicy(max_retries=1, retryable_errors=["rate_limit", "timeout"])
+    retry_policy = RetryPolicy(max_retries=0)
     idempotency_key_fields = ["prompt", "model", "size", "seconds"]
     side_effects = ["writes video file to output_path", "calls OpenAI Video API"]
     user_visible_verification = ["Watch generated clip for motion coherence, artifacts, and audio quality"]
@@ -138,59 +142,96 @@ class SoraVideo(BaseTool):
         seconds = int(self._normalize_seconds(inputs))
         return 120.0 * (seconds / 4)
 
+    def normalize_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        reject_unsupported_media(inputs, {*self.input_schema["properties"], "image_path"})
+        normalized = dict(inputs)
+        normalized["model"] = self._normalize_model(inputs)
+        normalized["size"] = self._normalize_size(inputs, normalized["model"])
+        normalized["seconds"] = self._normalize_seconds(inputs)
+        normalized.pop("duration", None)
+        normalized.pop("aspect_ratio", None)
+        reference = inputs.get("input_reference_path") or inputs.get("reference_image_path") or inputs.get("image_path")
+        for key in ("reference_image_path", "image_path"):
+            normalized.pop(key, None)
+        operation = inputs.get("operation", "image_to_video" if reference else "text_to_video")
+        if operation not in self.capabilities:
+            raise ValueError(f"Unsupported Sora operation: {operation}")
+        if any(inputs.get(k) for k in (
+            "image_url", "reference_image_url", "reference_image_urls", "reference_image_paths",
+            "video_url", "video_path", "reference_video_url",
+        )):
+            raise ValueError("Sora requires a single local input_reference_path; unsupported references cannot be ignored")
+        if operation == "image_to_video" and not reference:
+            raise ValueError("image_to_video requires input_reference_path")
+        if reference:
+            normalized["input_reference_path"] = reference
+        normalized["operation"] = operation
+        return normalized
+
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         if not os.environ.get("OPENAI_API_KEY"):
             return ToolResult(
                 success=False,
                 error="OPENAI_API_KEY not set. " + self.install_instructions,
+                cost_status="not_submitted",
             )
         if not self._openai_sdk_supports_videos():
             return ToolResult(
                 success=False,
                 error="OpenAI SDK with Videos API support is required. " + self.install_instructions,
+                cost_status="not_submitted",
             )
 
         from openai import OpenAI
 
-        start = time.time()
-        model = self._normalize_model(inputs)
-        size = self._normalize_size(inputs, model)
-        seconds = self._normalize_seconds(inputs)
-        prompt = str(inputs["prompt"]).strip()
-        output_path = Path(inputs.get("output_path", "sora_output.mp4"))
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        payload: dict[str, Any] = {
-            "model": model,
-            "prompt": prompt,
-            "size": size,
-            "seconds": seconds,
-        }
-
-        reference_path = inputs.get("input_reference_path") or inputs.get("reference_image_path")
-        if inputs.get("operation") == "image_to_video" or reference_path:
-            if not reference_path:
-                return ToolResult(success=False, error="image_to_video requires input_reference_path")
-            reference = Path(str(reference_path))
-            if not reference.exists():
-                return ToolResult(success=False, error=f"Input reference not found: {reference}")
-            payload["input_reference"] = {"image_url": self._file_to_data_uri(reference)}
-
-        client = OpenAI()
+        start = time.monotonic()
+        job = None
         try:
-            video = client.videos.create_and_poll(**payload)
-            video_id = self._get_video_id(video)
-            if not video_id:
-                return ToolResult(success=False, error=f"OpenAI Sora response did not include a video id: {video}")
-
-            status = self._get_status_value(video)
-            if status != "completed":
-                return ToolResult(success=False, error=f"OpenAI Sora generation ended with status: {status}")
-
-            content = client.videos.download_content(video_id, variant="video")
-            self._write_download(content, output_path)
+            inputs = self.normalize_inputs(inputs)
+            model, size, seconds = inputs["model"], inputs["size"], inputs["seconds"]
+            prompt = str(inputs["prompt"]).strip()
+            payload = {"model": model, "prompt": prompt, "size": size, "seconds": seconds}
+            if inputs.get("input_reference_path"):
+                reference = Path(inputs["input_reference_path"])
+                if not reference.is_file():
+                    raise ValueError("Input reference is not a file")
+                payload["input_reference"] = {"image_url": self._file_to_data_uri(reference)}
+            deadline = Deadline(inputs.get("timeout_seconds", 900))
+            job = ProviderJob.open(inputs, self.provider, model, self.estimate_cost(inputs))
+            job.require_resumable()
+            client = OpenAI(max_retries=0, timeout=deadline.remaining(30))
+            if job.should_submit:
+                job.submitting()
+                video = client.videos.create(**payload, timeout=deadline.remaining(30))
+                job.submitted(self._get_video_id(video))
+            video_id = job.job_id
+            if not job.record.get("staged"):
+                while True:
+                    video = safe_sdk_read(
+                        lambda: client.videos.retrieve(video_id, timeout=deadline.remaining(30)), deadline)
+                    status = self._get_status_value(video)
+                    if status == "completed":
+                        job.update(state="generated")
+                        break
+                    if status in {"failed", "cancelled"}:
+                        job.update(state="failed")
+                        raise RuntimeError(f"Sora generation {status}")
+                    if status not in {"queued", "in_progress"}:
+                        raise ValueError("Unexpected Sora status")
+                    deadline.sleep(float(inputs.get("poll_interval", 5)))
+                content = safe_sdk_read(lambda: client.videos.download_content(
+                    video_id, variant="video", timeout=deadline.remaining(120)), deadline)
+                temporary = job.path.with_suffix(".download")
+                try:
+                    self._write_download(content, temporary)
+                    job.stage([temporary.read_bytes()])
+                finally:
+                    temporary.unlink(missing_ok=True)
+                deadline.remaining()
+            output_path = Path(inputs.get("output_path", job.root / "sora_output.mp4"))
+            job.deliver([output_path])
         except Exception as exc:
-            return ToolResult(success=False, error=f"OpenAI Sora video generation failed: {exc}")
+            return job.failure(exc) if job else ToolResult(success=False, error=str(exc), cost_status="not_submitted")
 
         return ToolResult(
             success=True,
@@ -203,12 +244,19 @@ class SoraVideo(BaseTool):
                 "size": size,
                 "seconds": seconds,
                 "format": "mp4",
+                **job.metadata(),
             },
             artifacts=[str(output_path)],
             cost_usd=self.estimate_cost(inputs),
-            duration_seconds=round(time.time() - start, 2),
+            duration_seconds=round(time.monotonic() - start, 2),
             model=model,
+            cost_status="estimated",
+            provider_request_id=video_id,
         )
+
+    def validate_paid_recovery(self, inputs: dict[str, Any]) -> None:
+        inputs = self.normalize_inputs(inputs)
+        ProviderJob.validate_recovery(inputs, self.provider, inputs["model"], self.estimate_cost(inputs))
 
     @classmethod
     def _openai_sdk_supports_videos(cls) -> bool:
@@ -220,7 +268,14 @@ class SoraVideo(BaseTool):
 
         if cls._version_tuple(getattr(openai, "__version__", "")) < _MIN_OPENAI_VERSION:
             return False
-        return hasattr(OpenAI(), "videos")
+        client = OpenAI()
+        try:
+            videos = getattr(client, "videos", None)
+            return all(callable(getattr(videos, name, None)) for name in ("create", "retrieve", "download_content"))
+        finally:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
 
     @staticmethod
     def _version_tuple(version: str) -> tuple[int, int, int]:

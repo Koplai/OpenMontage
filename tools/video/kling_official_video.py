@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 from typing import Any
+from lib.provider_jobs import Deadline, ProviderJob, reject_unsupported_media, JOB_INPUT_PROPERTIES
 
 from tools._kling.account import account_usage_hint_for_error, get_account_costs
 from tools._kling.callbacks import validate_callback_url
@@ -34,6 +35,7 @@ from tools.base_tool import (
     ExecutionMode,
     ResourceProfile,
     RetryPolicy,
+    ResumeSupport,
     ToolResult,
     ToolRuntime,
     ToolStability,
@@ -52,6 +54,7 @@ class KlingOfficialVideo(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
+    resume_support = ResumeSupport.FROM_CHECKPOINT
 
     dependencies = ["env:KLING_API_KEY"]
     install_instructions = (
@@ -81,6 +84,7 @@ class KlingOfficialVideo(BaseTool):
         "type": "object",
         "required": ["prompt"],
         "properties": {
+            **JOB_INPUT_PROPERTIES,
             "prompt": {"type": "string"},
             "operation": {
                 "type": "string",
@@ -135,11 +139,7 @@ class KlingOfficialVideo(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
-    retry_policy = RetryPolicy(
-        max_retries=2,
-        backoff_seconds=2.0,
-        retryable_errors=["1302", "1303", "5000", "5001", "5002"],
-    )
+    retry_policy = RetryPolicy(max_retries=0)  # GET retries live in KlingClient, never repeat generation.
     idempotency_key_fields = [
         "prompt",
         "negative_prompt",
@@ -213,49 +213,92 @@ class KlingOfficialVideo(BaseTool):
         )
         return result
 
+    def normalize_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        reject_unsupported_media(inputs, self.input_schema["properties"])
+        normalized = dict(inputs)
+        operation = inputs.get("operation", "text_to_video")
+        family = inputs.get("api_family", "classic")
+        reference_keys = (
+            "reference_image_url", "reference_image_path", "reference_tail_image_url",
+            "reference_tail_image_path", "reference_image_urls", "reference_image_paths",
+            "reference_video_url", "video_urls", "video_list", "image_list", "element_list",
+        )
+        if family != "omni" and operation != "omni_video":
+            if operation == "text_to_video" and any(inputs.get(key) for key in reference_keys):
+                raise ValueError("Classic/Turbo text_to_video cannot ignore supplied references")
+            if any(inputs.get(key) for key in (
+                "reference_image_urls", "reference_image_paths", "reference_video_url",
+                "video_urls", "video_list", "image_list",
+            )):
+                raise ValueError("Multiple/video references require api_family=omni")
+        if any(inputs.get(key) for key in ("image_path", "image_url", "video_path", "video_url")):
+            raise ValueError("Use Kling Official's native reference inputs; inputs cannot be silently ignored")
+        request = self._build_request(normalized)
+        explicit_model = inputs.get("model_name") or inputs.get("model_variant") or inputs.get("model")
+        if explicit_model and explicit_model != request["model"]:
+            raise ValueError("Requested model differs from the resolved Kling model")
+        normalized["operation"] = request["operation"]
+        normalized["api_family"] = request["api_family"]
+        if request["api_family"] != "turbo":
+            normalized["model_name"] = request["model"]
+        return normalized
+
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         try:
             self.check_dependencies()
         except DependencyError as exc:
-            return ToolResult(success=False, error=str(exc))
+            return ToolResult(success=False, error=str(exc), cost_status="not_submitted")
 
-        start = time.time()
+        start = time.monotonic()
+        job = None
         try:
+            inputs = self.normalize_inputs(inputs)
             request = self._build_request(inputs)
             client = KlingClient()
-            if request["protocol"] == "turbo":
-                task_id = client.create_turbo(request["path"], request["payload"])
-                outputs = client.poll_turbo(
-                    task_id,
-                    timeout_seconds=int(inputs.get("timeout_seconds", 900)),
-                    poll_interval=float(inputs.get("poll_interval", 5.0)),
-                )
-            else:
-                task_id = client.create_classic_task(request["path"], request["payload"])
-                outputs = client.poll_classic(
-                    request["path"],
-                    task_id,
-                    "videos",
-                    timeout_seconds=int(inputs.get("timeout_seconds", 900)),
-                    poll_interval=float(inputs.get("poll_interval", 5.0)),
-                )
-            paths = self._download_videos(client, outputs, inputs)
-            video_url = self._first_output_url(outputs)
+            client.deadline = Deadline(inputs.get("timeout_seconds", 900))
+            job = ProviderJob.open(inputs, self.provider, request["model"], self.estimate_cost(inputs))
+            job.require_resumable()
+            if job.should_submit:
+                job.submitting()
+                if request["protocol"] == "turbo":
+                    job.submitted(client.create_turbo(request["path"], request["payload"]))
+                else:
+                    job.submitted(client.create_classic_task(request["path"], request["payload"]))
+            task_id = job.job_id
+            outputs = []
+            if not job.record.get("staged"):
+                kwargs = {"timeout_seconds": int(inputs.get("timeout_seconds", 900)),
+                          "poll_interval": float(inputs.get("poll_interval", 5.0))}
+                if request["protocol"] == "turbo":
+                    outputs = client.poll_turbo(task_id, **kwargs)
+                else:
+                    outputs = client.poll_classic(request["path"], task_id, "videos", **kwargs)
+                job.update(state="generated")
+                temporary = self._download_videos(
+                    client, outputs, {**inputs, "output_path": str(job.path.with_suffix(".mp4"))})
+                job.stage([path.read_bytes() for path in temporary])
+                job.update(output_suffixes=[path.suffix for path in temporary])
+                for path in temporary:
+                    path.unlink(missing_ok=True)
+            base = Path(inputs.get("output_path", job.root / "kling_official_video.mp4"))
+            paths = [numbered_output_path(output_path_with_suffix(base, suffix), index, suffix)
+                     for index, suffix in enumerate(job.record.get("output_suffixes") or
+                                                    [".mp4"] * len(job.record["staged"]))]
+            job.deliver(paths)
+            video_url = self._first_output_url(outputs) if outputs else None
             probed = probe_output(paths[0])
-        except (KlingAPIError, TimeoutError, ValueError, KeyError, FileNotFoundError) as exc:
-            data: dict[str, Any] = {"provider": self.provider}
+        except Exception as exc:
+            result = job.failure(exc) if job else ToolResult(
+                success=False, data={"provider": self.provider}, error=str(exc), cost_status="not_submitted")
             if isinstance(exc, KlingAPIError):
-                data.update(
+                result.data.update(
                     {
                         "error_code": exc.code,
-                        "request_id": exc.request_id,
                         "http_status": exc.http_status,
                     }
                 )
-                data["account_usage_diagnostic"] = account_usage_hint_for_error(exc)
-            return ToolResult(success=False, data=data, error=f"Kling official video generation failed: {exc}")
-        except Exception as exc:
-            return ToolResult(success=False, data={"provider": self.provider}, error=f"Kling official video generation failed: {exc}")
+                result.data["account_usage_diagnostic"] = account_usage_hint_for_error(exc)
+            return result
 
         return ToolResult(
             success=True,
@@ -279,12 +322,20 @@ class KlingOfficialVideo(BaseTool):
                 **self._account_usage_result(inputs, client),
                 **self._callback_result_data(inputs, task_id),
                 **probed,
+                **job.metadata(),
             },
             artifacts=[str(path) for path in paths],
             cost_usd=self.estimate_cost(inputs),
-            duration_seconds=round(time.time() - start, 2),
+            duration_seconds=round(time.monotonic() - start, 2),
             model=request["model"],
+            cost_status="estimated",
+            provider_request_id=task_id,
         )
+
+    def validate_paid_recovery(self, inputs: dict[str, Any]) -> None:
+        inputs = self.normalize_inputs(inputs)
+        model = self._build_request(inputs)["model"]
+        ProviderJob.validate_recovery(inputs, self.provider, model, self.estimate_cost(inputs))
 
     def _build_request(self, inputs: dict[str, Any]) -> dict[str, Any]:
         operation = str(inputs.get("operation", "text_to_video"))

@@ -20,6 +20,7 @@ class TTSSelector(BaseTool):
     provider = "selector"
     stability = ToolStability.BETA
     runtime = ToolRuntime.HYBRID
+    delegates_paid_execution = True
     agent_skills = ["text-to-speech", "elevenlabs"]
 
     capabilities = [
@@ -181,11 +182,23 @@ class TTSSelector(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        candidates = self._providers()
-        if not candidates:
+        if inputs.get("operation") == "rank":
             return 0.0
-        tool, _ = self._select_best_tool(inputs, candidates, self._prepare_task_context(inputs))
-        return tool.estimate_cost(inputs) if tool else 0.0
+        tool, adapted = self.resolve_execution(inputs)
+        return tool.estimate_cost(adapted)
+
+    def resolve_execution(self, inputs: dict[str, Any]) -> tuple[BaseTool, dict[str, Any]]:
+        tool, _ = self._select_best_tool(inputs, self._providers(), self._prepare_task_context(inputs))
+        if tool is None:
+            raise ValueError("Requested TTS provider/model is unavailable; no substitution permitted")
+        adapted = self._adapt_inputs(tool, inputs)
+        normalizer = getattr(tool, "normalize_inputs", None)
+        if callable(normalizer):
+            return tool, normalizer(adapted)
+        for key, spec in tool.input_schema.get("properties", {}).items():
+            if "default" in spec:
+                adapted.setdefault(key, spec["default"])
+        return tool, adapted
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         from lib.scoring import rank_providers
@@ -206,17 +219,16 @@ class TTSSelector(BaseTool):
             )
 
         # Normal generation — use scored selection
-        tool, score = self._select_best_tool(inputs, candidates, task_context)
-        if tool is None:
-            return ToolResult(success=False, error="No TTS provider available.")
+        try:
+            tool, adapted = self.resolve_execution(inputs)
+        except ValueError as exc:
+            return ToolResult(success=False, error=str(exc))
 
-        result = tool.execute(self._adapt_inputs(tool, inputs))
+        result = tool.execute(adapted)
         if result.success:
             result.data.setdefault("selected_tool", tool.name)
             result.data["selected_provider"] = tool.provider
-            result.data["selection_reason"] = score.explain() if score else f"Selected {tool.provider} ({tool.name})"
-            if score:
-                result.data["provider_score"] = score.to_dict()
+            result.data["selection_reason"] = f"Resolved {tool.provider} ({tool.name}); rankings are recommendations only"
             result.data.update(self._tool_context_payload(tool))
             result.data["alternatives_considered"] = [
                 t.name for t in candidates
@@ -228,6 +240,25 @@ class TTSSelector(BaseTool):
     def _adapt_inputs(tool: BaseTool, inputs: dict[str, Any]) -> dict[str, Any]:
         """Translate capability-level controls to provider-native inputs."""
         adapted = dict(inputs)
+        props = tool.input_schema.get("properties", {})
+        for key in ("preferred_provider", "allowed_providers", "task_context", "operation"):
+            adapted.pop(key, None)
+        for source, targets in (("model_id", ("model",)), ("model", ("model_id",)),
+                                ("voice_id", ("voice",)), ("output_format", ("response_format", "format"))):
+            if source in adapted and source not in props:
+                target = next((key for key in targets if key in props), None)
+                if target:
+                    value = adapted.pop(source)
+                    if target in adapted and adapted[target] != value:
+                        raise ValueError(f"Conflicting {source} and {target}")
+                    adapted[target] = value
+                elif source in {"model", "model_id"}:
+                    raise ValueError(f"{tool.name} does not support {source}")
+        if inputs.get("input_type") == "ssml" and not (
+            "ssml" in getattr(tool, "capabilities", []) or tool.supports.get("ssml")
+            or "ssml" in props.get("input_type", {}).get("enum", [])
+        ):
+            raise ValueError(f"{tool.name} does not support SSML")
         if tool.name != "azure_tts":
             return adapted
 
@@ -267,23 +298,24 @@ class TTSSelector(BaseTool):
         preferred = inputs.get("preferred_provider", "auto")
         allowed = set(inputs.get("allowed_providers") or [])
         if allowed:
-            candidates = [tool for tool in candidates if tool.provider in allowed]
+            candidates = [tool for tool in candidates if tool.provider in allowed or tool.name in allowed]
+        if preferred != "auto":
+            candidates = [tool for tool in candidates if preferred in {tool.provider, tool.name}]
+        model = inputs.get("model") or inputs.get("model_id")
+        if model:
+            candidates = [tool for tool in candidates if any(
+                model in spec.get("enum", []) or model == spec.get("default")
+                or (preferred in {tool.provider, tool.name} and spec and "enum" not in spec)
+                for key in ("model", "model_id")
+                for spec in [tool.input_schema.get("properties", {}).get(key, {})]
+            )]
 
         rankings = rank_providers(candidates, task_context)
 
-        tool_by_provider: dict[str, BaseTool] = {}
-        for tool in candidates:
-            if tool.provider not in tool_by_provider and tool.get_status() == ToolStatus.AVAILABLE:
-                tool_by_provider[tool.provider] = tool
-
-        if preferred != "auto":
-            for score_item in rankings:
-                if score_item.provider == preferred and score_item.provider in tool_by_provider:
-                    return tool_by_provider[score_item.provider], score_item
-
+        selectable = {tool.name: tool for tool in candidates if tool.get_status() == ToolStatus.AVAILABLE}
         for score_item in rankings:
-            if score_item.provider in tool_by_provider:
-                return tool_by_provider[score_item.provider], score_item
+            if score_item.tool_name in selectable:
+                return selectable[score_item.tool_name], score_item
 
         return None, None
 

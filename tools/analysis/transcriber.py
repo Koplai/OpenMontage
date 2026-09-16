@@ -1,13 +1,13 @@
 """Transcription tool wrapping faster-whisper / WhisperX.
 
-Provides speech-to-text with word-level timestamps and optional speaker
-diarization. Falls back gracefully when GPU or diarization dependencies
-are not available.
+Provides speech-to-text, optional forced alignment and optional speaker labels.
+CPU fallback is explicit; an unavailable requested pass is not reported as success.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -39,8 +39,10 @@ class Transcriber(BaseTool):
     dependencies = ["python:faster_whisper"]
     install_instructions = (
         "pip install faster-whisper  # CPU mode\n"
-        "pip install faster-whisper[gpu]  # GPU mode (requires CUDA)\n"
-        "pip install whisperx  # For diarization support"
+        "GPU: install CUDA/cuDNN versions supported by your CTranslate2 build; "
+        "the same faster-whisper package is used (no gpu extra).\n"
+        "pip install whisperx==3.8.6  # Optional alignment/diarization; "
+        "diarization also needs HF_TOKEN and accepted pyannote model terms."
     )
     agent_skills = ["speech-to-text"]
 
@@ -63,6 +65,8 @@ class Transcriber(BaseTool):
             },
             "language": {"type": "string", "description": "ISO 639-1 language code, or null for auto-detect"},
             "diarize": {"type": "boolean", "default": False},
+            "align": {"type": "boolean", "default": False,
+                      "description": "Run WhisperX forced alignment independently of speaker diarization."},
             "output_dir": {"type": "string", "description": "Directory for output files"},
         },
     }
@@ -103,10 +107,12 @@ class Transcriber(BaseTool):
             return ToolStatus.UNAVAILABLE
 
     def _has_diarization(self) -> bool:
+        if not os.environ.get("HF_TOKEN"):
+            return False
         try:
-            import whisperx  # noqa: F401
+            from whisperx.diarize import DiarizationPipeline  # noqa: F401
             return True
-        except ImportError:
+        except (ImportError, OSError):
             return False
 
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
@@ -209,11 +215,30 @@ class Transcriber(BaseTool):
         detected_language = language or info.language
         duration = info.duration
 
-        # Optional diarization pass
-        if diarize and self._has_diarization():
-            segments = self._apply_diarization(
-                str(input_path), segments, detected_language
-            )
+        alignment_status = "not_requested"
+        diarization_status = "not_requested"
+        errors = []
+        if inputs.get("align"):
+            try:
+                segments = self._apply_alignment(str(input_path), segments, detected_language)
+                alignment_status = "completed"
+            except Exception as exc:
+                alignment_status = "failed"
+                errors.append(f"Requested alignment failed ({type(exc).__name__}); install/check WhisperX 3.8.6")
+        if diarize:
+            if not self._has_diarization():
+                diarization_status = "unavailable"
+                errors.append("Requested diarization unavailable: WhisperX 3.8.6, HF_TOKEN and pyannote access are required")
+            else:
+                try:
+                    segments = self._apply_diarization(str(input_path), segments)
+                    diarization_status = "completed"
+                except Exception as exc:
+                    diarization_status = "failed"
+                    errors.append(f"Requested diarization failed ({type(exc).__name__}); verify pyannote model access")
+
+        # One timing source for both nested words and top-level consumers.
+        word_timestamps = [word for segment in segments for word in segment.get("words", [])]
 
         elapsed = time.time() - start
 
@@ -226,6 +251,9 @@ class Transcriber(BaseTool):
             "device": device,
             "compute_type": compute_type,
             "gpu_fallback_reason": gpu_fallback_reason,
+            "alignment_status": alignment_status,
+            "diarization_status": diarization_status,
+            "warnings": errors,
         }
 
         # Write transcript JSON
@@ -233,47 +261,38 @@ class Transcriber(BaseTool):
         output_path.write_text(json.dumps(result_data, indent=2), encoding="utf-8")
 
         return ToolResult(
-            success=True,
+            success=not errors,
+            error="; ".join(errors) if errors else None,
             data=result_data,
             artifacts=[str(output_path)],
             duration_seconds=round(elapsed, 2),
         )
 
-    def _apply_diarization(
+    def _apply_alignment(
         self,
         audio_path: str,
         segments: list[dict],
         language: str,
     ) -> list[dict]:
-        """Apply WhisperX diarization to assign speaker labels."""
-        try:
-            import whisperx
+        """Forced alignment is independent of gated speaker model access."""
+        import whisperx
 
-            # Load audio for alignment
-            audio = whisperx.load_audio(audio_path)
+        audio = whisperx.load_audio(audio_path)
+        align_model, align_metadata = whisperx.load_align_model(language_code=language, device="cpu")
+        aligned = whisperx.align(segments, align_model, align_metadata, audio, device="cpu")
+        return aligned["segments"]
 
-            # Align segments with word timestamps
-            align_model, align_metadata = whisperx.load_align_model(
-                language_code=language, device="cpu"
-            )
-            aligned = whisperx.align(
-                segments, align_model, align_metadata, audio, device="cpu"
-            )
+    def _apply_diarization(self, audio_path: str, segments: list[dict]) -> list[dict]:
+        """WhisperX stable 3.8.6 exports this class from whisperx.diarize."""
+        import copy
+        import whisperx
+        from whisperx.diarize import DiarizationPipeline
 
-            # Diarize
-            import os
-            hf_token = os.environ.get("HF_TOKEN")
-            if not hf_token:
-                # Can't diarize without HuggingFace token for pyannote
-                return segments
-
-            diarize_model = whisperx.DiarizationPipeline(
-                use_auth_token=hf_token, device="cpu"
-            )
-            diarize_segments = diarize_model(audio)
-            result = whisperx.assign_word_speakers(diarize_segments, aligned)
-
-            return result.get("segments", segments)
-        except Exception:
-            # Diarization is best-effort; return original segments on failure
-            return segments
+        audio = whisperx.load_audio(audio_path)
+        diarize_model = DiarizationPipeline(token=os.environ["HF_TOKEN"], device="cpu")
+        diarize_segments = diarize_model(audio)
+        result = whisperx.assign_word_speakers(diarize_segments, {"segments": copy.deepcopy(segments)})
+        segments = result["segments"]
+        if segments and not any(segment.get("speaker") for segment in segments):
+            raise ValueError("Diarization returned no speaker labels")
+        return segments

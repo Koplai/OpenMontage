@@ -7,6 +7,7 @@ import os
 import time
 from pathlib import Path
 from typing import Any
+from lib.provider_jobs import Deadline, ProviderJob, sdk_available, reject_unsupported_media, JOB_INPUT_PROPERTIES
 
 from tools.base_tool import (
     BaseTool,
@@ -14,6 +15,7 @@ from tools.base_tool import (
     ExecutionMode,
     ResourceProfile,
     RetryPolicy,
+    ResumeSupport,
     ToolResult,
     ToolRuntime,
     ToolStability,
@@ -32,8 +34,9 @@ class OpenAIImage(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
+    resume_support = ResumeSupport.FROM_CHECKPOINT
 
-    dependencies = []  # checked dynamically
+    dependencies = ["python:openai"]
     install_instructions = (
         "Set OPENAI_API_KEY to your OpenAI API key.\n"
         "  pip install openai"
@@ -57,6 +60,7 @@ class OpenAIImage(BaseTool):
         "type": "object",
         "required": ["prompt"],
         "properties": {
+            **JOB_INPUT_PROPERTIES,
             "prompt": {"type": "string"},
             "model": {
                 "type": "string",
@@ -86,7 +90,7 @@ class OpenAIImage(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=100, network_required=True
     )
-    retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
+    retry_policy = RetryPolicy(max_retries=0)
     idempotency_key_fields = ["prompt", "size", "quality", "model"]
     side_effects = ["writes image file to output_path", "calls OpenAI API"]
     user_visible_verification = ["Inspect generated image for relevance and quality"]
@@ -111,11 +115,12 @@ class OpenAIImage(BaseTool):
         return [base.parent / f"{base.name}_{idx + 1}{suffix}" for idx in range(count)]
 
     def get_status(self) -> ToolStatus:
-        if os.environ.get("OPENAI_API_KEY"):
+        if os.environ.get("OPENAI_API_KEY") and sdk_available("openai", "OpenAI"):
             return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
+        inputs = self.normalize_inputs(inputs)
         # gpt-image-2 per-image pricing at 1024x1024 (non-square sizes run
         # slightly cheaper): https://developers.openai.com/api/docs/guides/image-generation
         quality = inputs.get("quality", "high")
@@ -123,48 +128,67 @@ class OpenAIImage(BaseTool):
         cost_map = {"low": 0.006, "medium": 0.053, "high": 0.211, "auto": 0.053}
         return cost_map.get(quality, 0.053) * n
 
+    def normalize_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        reject_unsupported_media(inputs, self.input_schema["properties"])
+        normalized = dict(inputs)
+        for alias in ("num_images", "number_of_images"):
+            if alias in normalized:
+                count = normalized.pop(alias)
+                if "n" in normalized and normalized["n"] != count:
+                    raise ValueError(f"Conflicting n and {alias}")
+                normalized["n"] = count
+        if (inputs.get("generation_mode") == "edit" or any(inputs.get(k) for k in
+                ("image", "images", "image_url", "image_path", "image_urls", "image_paths",
+                 "image_list", "element_list", "image_reference"))):
+            raise ValueError("OpenAIImage does not implement image editing/reference inputs")
+        for key, spec in self.input_schema["properties"].items():
+            if "default" in spec:
+                normalized.setdefault(key, spec["default"])
+            if key in normalized and "enum" in spec and normalized[key] not in spec["enum"]:
+                raise ValueError(f"Unsupported {key}")
+        n = normalized["n"]
+        if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= 4:
+            raise ValueError("n must be an integer from 1 to 4")
+        return normalized
+
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        if not os.environ.get("OPENAI_API_KEY"):
+        if self.get_status() != ToolStatus.AVAILABLE:
             return ToolResult(
                 success=False,
-                error="OPENAI_API_KEY not set. " + self.install_instructions,
+                error="OpenAI key or SDK unavailable. " + self.install_instructions,
+                cost_status="not_submitted",
             )
 
         from openai import OpenAI
 
-        start = time.time()
-        client = OpenAI()
-        model = inputs.get("model", "gpt-image-2")
-        prompt = inputs["prompt"]
-        size = inputs.get("size", "1024x1024")
-        n = inputs.get("n", 1)
-
+        start = time.monotonic()
+        job = None
         try:
-            quality = inputs.get("quality", "high")
-            output_format = inputs.get("output_format", "png")
-            response = client.images.generate(
-                model=model,
-                prompt=prompt,
-                size=size,
-                quality=quality,
-                output_format=output_format,
-                n=n,
-            )
-
-            items = response.data or []
-            if not items:
-                return ToolResult(success=False, error="OpenAI returned no image outputs")
-
-            ext = output_format
-            output_paths = self._output_paths(inputs.get("output_path"), len(items), ext)
-            outputs: list[str] = []
-            for item, out_path in zip(items, output_paths):
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                out_path.write_bytes(base64.b64decode(item.b64_json))
-                outputs.append(str(out_path))
-
-        except Exception as e:
-            return ToolResult(success=False, error=f"OpenAI image generation failed: {e}")
+            inputs = self.normalize_inputs(inputs)
+            model, prompt = inputs["model"], inputs["prompt"]
+            deadline = Deadline(inputs.get("timeout_seconds", 900))
+            job = ProviderJob.open(inputs, self.provider, model, self.estimate_cost(inputs))
+            job.require_resumable()
+            if job.should_submit:
+                client = OpenAI(max_retries=0, timeout=deadline.remaining(120))
+                job.submitting()
+                response = client.images.generate(**{
+                    key: inputs[key] for key in ("model", "prompt", "size", "quality", "output_format", "n")
+                })
+                items = response.data or []
+                if not items:
+                    raise ValueError("OpenAI returned no image outputs")
+                # Synchronous image responses cannot be fetched again by task ID.
+                # Keep generated bytes durably before attempting final delivery.
+                job.stage([base64.b64decode(item.b64_json, validate=True) for item in items])
+                deadline.remaining()
+            output_paths = self._output_paths(
+                inputs.get("output_path") or str(job.root / f"generated_image.{inputs['output_format']}"),
+                len(job.record["staged"]), inputs["output_format"])
+            job.deliver(output_paths)
+            outputs = [str(path) for path in output_paths]
+        except Exception as exc:
+            return job.failure(exc) if job else ToolResult(success=False, error=str(exc), cost_status="not_submitted")
 
         return ToolResult(
             success=True,
@@ -175,9 +199,15 @@ class OpenAIImage(BaseTool):
                 "output": outputs[0],
                 "outputs": outputs,
                 "images_generated": len(outputs),
+                **job.metadata(),
             },
             artifacts=outputs,
             cost_usd=self.estimate_cost(inputs),
-            duration_seconds=round(time.time() - start, 2),
+            duration_seconds=round(time.monotonic() - start, 2),
             model=model,
+            cost_status="estimated",
         )
+
+    def validate_paid_recovery(self, inputs: dict[str, Any]) -> None:
+        inputs = self.normalize_inputs(inputs)
+        ProviderJob.validate_recovery(inputs, self.provider, inputs["model"], self.estimate_cost(inputs))

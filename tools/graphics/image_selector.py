@@ -20,6 +20,7 @@ class ImageSelector(BaseTool):
     provider = "selector"
     stability = ToolStability.BETA
     runtime = ToolRuntime.HYBRID
+    delegates_paid_execution = True
     agent_skills = ["flux-best-practices", "bfl-api", "atlas-cloud"]
 
     capabilities = [
@@ -34,7 +35,7 @@ class ImageSelector(BaseTool):
     best_for = [
         "preflight routing — pick the best image provider for the task",
         "switching between generated and stock images",
-        "automatic fallback when preferred provider is unavailable",
+        "recommend alternatives when a preferred provider is unavailable",
     ]
 
     input_schema = {
@@ -209,17 +210,21 @@ class ImageSelector(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        candidates = self._providers()
-        if not candidates:
+        if inputs.get("operation") == "rank":
             return 0.0
-        tool, _ = self._select_best_tool(inputs, candidates, self._prepare_task_context(inputs))
-        return tool.estimate_cost(inputs) if tool else 0.0
+        tool, adapted = self.resolve_execution(inputs)
+        return tool.estimate_cost(adapted)
+
+    def resolve_execution(self, inputs: dict[str, Any]) -> tuple[BaseTool, dict[str, Any]]:
+        """Pure resolution for estimation, exact-request approval and execution."""
+        tool, _ = self._select_best_tool(inputs, self._providers(), self._prepare_task_context(inputs))
+        if tool is None:
+            raise ValueError("Requested image provider/model or reference operation is unavailable; no substitution permitted")
+        return tool, self._adapt_inputs(tool, inputs)
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        import logging
         from lib.scoring import rank_providers
 
-        logger = logging.getLogger(__name__)
         task_context = self._prepare_task_context(inputs)
         candidates = self._filter_candidates(inputs, self._providers())
 
@@ -236,47 +241,59 @@ class ImageSelector(BaseTool):
             )
 
         # Normal generation — use scored selection
-        tool, score = self._select_best_tool(inputs, candidates, task_context)
-        if tool is None:
-            return ToolResult(success=False, error="No image provider available.")
+        try:
+            tool, adapted = self.resolve_execution(inputs)
+        except ValueError as exc:
+            return ToolResult(success=False, error=str(exc))
+        result = tool.execute(adapted)
+        if result.success:
+            result.data.setdefault("selected_tool", tool.name)
+            result.data["selected_provider"] = tool.provider
+            result.data["selection_reason"] = f"Resolved {tool.provider} ({tool.name}); rankings are recommendations only"
+            result.data.update(self._tool_context_payload(tool))
+        return result
 
-        # Adapt input keys: stock tools use 'query' while generators use 'prompt'
+    @staticmethod
+    def _adapt_inputs(tool: BaseTool, inputs: dict[str, Any]) -> dict[str, Any]:
+        from lib.provider_jobs import reject_unsupported_media
+
         adapted = dict(inputs)
-        if hasattr(tool, 'input_schema'):
-            props = tool.input_schema.get("properties", {})
-            if "query" in props and "query" not in adapted:
-                adapted["query"] = adapted.get("prompt", "")
-            # Normalize the selector's shared reference-image inputs for
-            # providers whose native contract accepts an ``images`` array.
-            if "images" in props and "images" not in adapted:
-                refs = (
-                    adapted.get("image_paths")
-                    or adapted.get("image_urls")
-                    or ([adapted["image_path"]] if adapted.get("image_path") else None)
-                    or ([adapted["image_url"]] if adapted.get("image_url") else None)
-                )
-                if refs:
-                    adapted["images"] = refs
-            # The selector exposes a provider-neutral ``model_name`` field,
-            # while several providers call the same input ``model``.
-            if (
-                "model_name" in adapted
-                and "model" in props
-                and "model" not in adapted
-            ):
-                adapted["model"] = adapted["model_name"]
-            if "n" in adapted and "num_images" in props and "num_images" not in adapted:
-                adapted["num_images"] = adapted["n"]
-
-        # Strip selector-only keys that downstream tools don't understand
-        adapted.pop("preferred_provider", None)
-        adapted.pop("allowed_providers", None)
-
-        # Pass through generation params only to tools that accept them.
-        if hasattr(tool, 'input_schema'):
-            props = tool.input_schema.get("properties", {})
-            stripped = []
-            for passthrough_key in (
+        props = tool.input_schema.get("properties", {})
+        if "query" in props and "query" not in adapted:
+            adapted["query"] = adapted.get("prompt", "")
+        reference_keys = ("image_url", "image_path", "image_urls", "image_paths")
+        if "images" in props and "images" not in adapted:
+            refs = list(adapted.get("image_paths") or []) + list(adapted.get("image_urls") or [])
+            refs += [adapted[key] for key in ("image_path", "image_url") if adapted.get(key)]
+            if refs:
+                adapted["images"] = refs
+                for key in reference_keys:
+                    adapted.pop(key, None)
+        for source, targets in (
+            ("model_name", ("model",)), ("model", ("model_name",)),
+            ("n", ("num_images", "number_of_images")),
+            ("num_images", ("n", "number_of_images")),
+            ("number_of_images", ("n", "num_images")),
+        ):
+            if source in adapted and source not in props:
+                target = next((key for key in targets if key in props), None)
+                if target:
+                    value = adapted.pop(source)
+                    if target in adapted and adapted[target] != value:
+                        raise ValueError(f"Conflicting {source} and {target}")
+                    adapted[target] = value
+                else:
+                    raise ValueError(f"{tool.name} does not support {source}")
+        for key in (*reference_keys, "images", "image", "image_list", "element_list", "image_reference"):
+            if adapted.get(key) and key not in props:
+                raise ValueError(f"{tool.name} cannot consume {key}; references cannot be stripped")
+        if adapted.get("generation_mode") == "edit" and "generation_mode" not in props:
+            if not any(adapted.get(key) for key in (*reference_keys, "images", "image", "image_list")):
+                raise ValueError(f"{tool.name} cannot perform the requested edit")
+        for key in ("preferred_provider", "allowed_providers", "task_context", "operation"):
+            adapted.pop(key, None)
+        reject_unsupported_media(adapted, props)
+        for passthrough_key in (
                 "negative_prompt",
                 "width",
                 "height",
@@ -308,28 +325,14 @@ class ImageSelector(BaseTool):
                 "workflow_name",
                 "workflow_model",
                 "workflow_model_stack",
-            ):
-                if passthrough_key in adapted and passthrough_key not in props:
-                    stripped.append(f"{passthrough_key}={adapted.pop(passthrough_key)}")
-            if stripped:
-                logger.warning(
-                    "image_selector: stripped unsupported params for %s: %s",
-                    tool.name, ", ".join(stripped),
-                )
-
-        result = tool.execute(adapted)
-        if result.success:
-            result.data.setdefault("selected_tool", tool.name)
-            result.data["selected_provider"] = tool.provider
-            result.data["selection_reason"] = score.explain() if score else f"Selected {tool.provider} ({tool.name})"
-            if score:
-                result.data["provider_score"] = score.to_dict()
-            result.data.update(self._tool_context_payload(tool))
-            result.data["alternatives_considered"] = [
-                t.name for t in candidates
-                if t.name != tool.name and t.get_status().value == "available"
-            ]
-        return result
+        ):
+            if passthrough_key in adapted and passthrough_key not in props:
+                adapted.pop(passthrough_key)
+        for key, spec in props.items():
+            if "default" in spec:
+                adapted.setdefault(key, spec["default"])
+        normalizer = getattr(tool, "normalize_inputs", None)
+        return normalizer(adapted) if callable(normalizer) else adapted
 
     def _select_best_tool(
         self,
@@ -343,24 +346,17 @@ class ImageSelector(BaseTool):
         preferred = inputs.get("preferred_provider", "auto")
         allowed = set(inputs.get("allowed_providers") or [])
         if allowed:
-            candidates = [tool for tool in candidates if tool.provider in allowed]
+            candidates = [tool for tool in candidates if tool.provider in allowed or tool.name in allowed]
+        if preferred != "auto":
+            candidates = [tool for tool in candidates if preferred in {tool.provider, tool.name}]
         candidates = self._filter_candidates(inputs, candidates)
 
         rankings = rank_providers(candidates, task_context)
 
-        tool_by_provider: dict[str, BaseTool] = {}
-        for tool in candidates:
-            if tool.provider not in tool_by_provider and self._tool_selectable(tool, inputs):
-                tool_by_provider[tool.provider] = tool
-
-        if preferred != "auto":
-            for score_item in rankings:
-                if score_item.provider == preferred and score_item.provider in tool_by_provider:
-                    return tool_by_provider[score_item.provider], score_item
-
+        selectable = {tool.name: tool for tool in candidates if self._tool_selectable(tool, inputs)}
         for score_item in rankings:
-            if score_item.provider in tool_by_provider:
-                return tool_by_provider[score_item.provider], score_item
+            if score_item.tool_name in selectable:
+                return selectable[score_item.tool_name], score_item
 
         return None, None
 
@@ -401,15 +397,20 @@ class ImageSelector(BaseTool):
         return serialized
 
     def _filter_candidates(self, inputs: dict[str, Any], candidates: list[BaseTool]) -> list[BaseTool]:
-        exact_model = inputs.get("model")
+        exact_model = inputs.get("model") or inputs.get("model_name")
         if exact_model:
             model_matches = [
                 tool for tool in candidates
-                if exact_model in getattr(tool, "input_schema", {}).get("properties", {}).get("model", {}).get("enum", [])
+                if any(exact_model in getattr(tool, "input_schema", {}).get("properties", {}).get(key, {}).get("enum", [])
+                       for key in ("model", "model_name"))
                 or exact_model in tool.get_info().get("model_catalog", {})
+                or (inputs.get("preferred_provider") not in (None, "auto")
+                    and inputs.get("preferred_provider") in {tool.name, tool.provider}
+                    and any(key in tool.input_schema.get("properties", {})
+                            and "enum" not in tool.input_schema["properties"][key]
+                            for key in ("model", "model_name")))
             ]
-            if model_matches:
-                candidates = model_matches
+            candidates = model_matches
 
         # A caller-supplied custom workflow is provider-specific (ComfyUI graph
         # JSON). Route it only to custom-workflow-capable providers whose server
@@ -423,6 +424,10 @@ class ImageSelector(BaseTool):
             or inputs.get("image_path")
             or inputs.get("image_urls")
             or inputs.get("image_paths")
+            or inputs.get("image_list")
+            or inputs.get("element_list")
+            or inputs.get("images")
+            or inputs.get("image_reference")
         )
         if not wants_edit:
             return candidates
@@ -432,10 +437,10 @@ class ImageSelector(BaseTool):
             props = getattr(tool, "input_schema", {}).get("properties", {})
             supports = getattr(tool, "supports", {})
             if supports.get("image_edit") or any(
-                key in props for key in ("image", "images", "image_url", "image_path", "image_urls", "image_paths")
+                key in props for key in ("image", "images", "image_url", "image_path", "image_urls", "image_paths", "image_list", "element_list")
             ):
                 filtered.append(tool)
-        return filtered or candidates
+        return filtered
 
     @staticmethod
     def _has_custom_workflow(inputs: dict[str, Any]) -> bool:

@@ -7,6 +7,7 @@ import os
 import time
 from pathlib import Path
 from typing import Any
+from lib.provider_jobs import Deadline, ProviderJob, fal_result, safe_get, reject_unsupported_media, JOB_INPUT_PROPERTIES
 
 from tools.base_tool import (
     BaseTool,
@@ -14,6 +15,7 @@ from tools.base_tool import (
     ExecutionMode,
     ResourceProfile,
     RetryPolicy,
+    ResumeSupport,
     ToolResult,
     ToolRuntime,
     ToolStability,
@@ -30,6 +32,7 @@ class SeedreamImage(BaseTool):
     execution_mode = ExecutionMode.ASYNC
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
+    resume_support = ResumeSupport.FROM_CHECKPOINT
 
     dependencies = ["env:FAL_KEY"]
     install_instructions = (
@@ -63,6 +66,7 @@ class SeedreamImage(BaseTool):
             "type": "object",
             "required": ["prompt"],
             "properties": {
+                **JOB_INPUT_PROPERTIES,
                 "prompt": {"type": "string"},
                 "image_size": {
                     "type": "string",
@@ -96,7 +100,7 @@ class SeedreamImage(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=100, network_required=True
     )
-    retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
+    retry_policy = RetryPolicy(max_retries=0)
     idempotency_key_fields = [
         "prompt",
         "image_size",
@@ -116,6 +120,7 @@ class SeedreamImage(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
+        inputs = self.normalize_inputs(inputs)
         image_size = inputs.get("image_size", "auto_2K")
         num_images = inputs.get("num_images", 1)
         size_price_map = {
@@ -130,6 +135,31 @@ class SeedreamImage(BaseTool):
         }
         unit_price = size_price_map.get(image_size, 0.135)
         return round(unit_price * num_images, 4)
+
+    def normalize_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        reject_unsupported_media(inputs, self.input_schema["properties"])
+        normalized = dict(inputs)
+        if inputs.get("model") or inputs.get("model_name"):
+            raise ValueError("SeedreamImage has a fixed v5 pro endpoint, not a model override")
+        for alias in ("n", "number_of_images"):
+            if alias in normalized:
+                count = normalized.pop(alias)
+                if "num_images" in normalized and normalized["num_images"] != count:
+                    raise ValueError(f"Conflicting {alias} and num_images")
+                normalized["num_images"] = count
+        normalized.setdefault("num_images", 1)
+        normalized.setdefault("image_size", "auto_2K")
+        normalized.setdefault("output_format", "jpeg")
+        normalized.setdefault("enable_safety_checker", True)
+        count = normalized["num_images"]
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 4:
+            raise ValueError("num_images must be an integer from 1 to 4")
+        if inputs.get("generation_mode") == "edit" or any(inputs.get(k) for k in (
+            "image", "images", "image_url", "image_path", "image_urls", "image_paths",
+            "image_list", "element_list", "image_reference",
+        )):
+            raise ValueError("SeedreamImage only implements text-to-image, not references/edits")
+        return normalized
 
     @staticmethod
     def _output_paths(
@@ -153,9 +183,14 @@ class SeedreamImage(BaseTool):
             return ToolResult(
                 success=False,
                 error="FAL_KEY not set. " + self.install_instructions,
+                cost_status="not_submitted",
             )
 
-        start = time.time()
+        start = time.monotonic()
+        try:
+            inputs = self.normalize_inputs(inputs)
+        except ValueError as exc:
+            return ToolResult(success=False, error=str(exc), cost_status="not_submitted")
         prompt = inputs["prompt"]
         num_images = inputs.get("num_images", 1)
         if isinstance(num_images, bool) or not isinstance(num_images, int):
@@ -166,7 +201,7 @@ class SeedreamImage(BaseTool):
             return ToolResult(
                 success=False, error="num_images must be between 1 and 4."
             )
-        submit_url = "https://queue.fal.run/bytedance/seedream/v5/pro/text-to-image"
+        endpoint = "bytedance/seedream/v5/pro/text-to-image"
         payload: dict[str, Any] = {
             "prompt": prompt,
             "image_size": inputs.get("image_size", "auto_2K"),
@@ -175,88 +210,23 @@ class SeedreamImage(BaseTool):
             "enable_safety_checker": inputs.get("enable_safety_checker", True),
         }
 
+        job = None
         try:
-            headers = {
-                "Authorization": f"Key {api_key}",
-                "Content-Type": "application/json",
-            }
-
-            submit_resp = requests.post(
-                submit_url,
-                headers=headers,
-                json=payload,
-                timeout=(10, 60),
-            )
-            submit_resp.raise_for_status()
-            submit_data = submit_resp.json()
-            request_id = submit_data.get("request_id")
-            if not request_id:
-                raise RuntimeError(
-                    "Seedream submit succeeded but did not return request_id"
-                )
-            status_url = (
-                f"https://queue.fal.run/bytedance/seedream/requests/"
-                f"{request_id}/status"
-            )
-            elapsed = 0.0
-            while elapsed < 300:
-                status_resp = requests.get(
-                    status_url,
-                    headers=headers,
-                    timeout=30,
-                )
-                status_resp.raise_for_status()
-                status_data = status_resp.json()
-                status = status_data.get("status")
-
-                if status == "COMPLETED":
-                    break
-                elif status in ("FAILED", "CANCELLED"):
-                    error_msg = status_data.get("error", "Unknown error")
-                    raise RuntimeError(f"Seedream task {status}: {error_msg}")
-
-                time.sleep(10)
-                elapsed += 10
-
-            if elapsed >= 300:
-                raise RuntimeError(
-                    f"Seedream task timed out after {300}s"
-                )
-
-            result_resp = requests.get(
-                f"https://queue.fal.run/bytedance/seedream/requests/"
-                f"{request_id}",
-                headers=headers,
-                timeout=30,
-            )
-            result_resp.raise_for_status()
-            result_data = result_resp.json()
-
-            images = result_data.get("images", [])
-            if not images:
-                raise RuntimeError("Seedream completed but no images returned")
-
-            ext = inputs.get("output_format", "jpeg")
-            expected_paths = self._output_paths(
-                inputs.get("output_path"), len(images), ext
-            )
-            output_paths = []
-            for img, output_path in zip(images, expected_paths):
-                image_url = img.get("url")
-                if not image_url:
-                    continue
-                image_resp = requests.get(image_url, timeout=60)
-                image_resp.raise_for_status()
-
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                output_path.write_bytes(image_resp.content)
-                output_paths.append(str(output_path))
-
-        except Exception as e:
-            return ToolResult(
-                success=False,
-                error=f"Seedream generation failed: {e}",
-            )
+            deadline = Deadline(inputs.get("timeout_seconds", 300))
+            job = ProviderJob.open(inputs, self.provider, endpoint, self.estimate_cost(inputs))
+            if not job.record.get("staged"):
+                data = fal_result(job, endpoint, payload, api_key, deadline, inputs.get("poll_interval", 5))
+                images = data.get("images") or []
+                if not images or any(not image.get("url") for image in images):
+                    raise ValueError("Seedream completed without a complete image set")
+                job.stage([safe_get(requests.get, image["url"], deadline).content for image in images])
+            request_id = job.job_id
+            paths = self._output_paths(inputs.get("output_path") or str(job.root / "seedream_image.jpeg"),
+                                       len(job.record["staged"]), inputs["output_format"])
+            job.deliver(paths)
+            output_paths = [str(path) for path in paths]
+        except Exception as exc:
+            return job.failure(exc) if job else ToolResult(success=False, error=str(exc), cost_status="not_submitted")
 
         return ToolResult(
             success=True,
@@ -267,9 +237,17 @@ class SeedreamImage(BaseTool):
                 "request_id": request_id,
                 "image_count": len(output_paths),
                 "outputs": output_paths,
+                **job.metadata(),
             },
             artifacts=output_paths,
             cost_usd=self.estimate_cost(inputs),
-            duration_seconds=round(time.time() - start, 2),
-            model="fal-ai/bytedance/seedream/v5",
+            duration_seconds=round(time.monotonic() - start, 2),
+            model=endpoint,
+            cost_status="estimated",
+            provider_request_id=request_id,
         )
+
+    def validate_paid_recovery(self, inputs: dict[str, Any]) -> None:
+        inputs = self.normalize_inputs(inputs)
+        ProviderJob.validate_recovery(inputs, self.provider, "bytedance/seedream/v5/pro/text-to-image",
+                                      self.estimate_cost(inputs))

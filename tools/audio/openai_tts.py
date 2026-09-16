@@ -6,6 +6,7 @@ import os
 import time
 from pathlib import Path
 from typing import Any
+from lib.provider_jobs import Deadline, ProviderJob, sdk_available, JOB_INPUT_PROPERTIES
 
 from tools.base_tool import (
     BaseTool,
@@ -13,6 +14,7 @@ from tools.base_tool import (
     ExecutionMode,
     ResourceProfile,
     RetryPolicy,
+    ResumeSupport,
     ToolResult,
     ToolRuntime,
     ToolStability,
@@ -31,12 +33,13 @@ class OpenAITTS(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
+    resume_support = ResumeSupport.FROM_CHECKPOINT
 
-    dependencies = []
+    dependencies = ["python:openai"]
     install_instructions = (
         "Set the OPENAI_API_KEY environment variable:\n"
         "  export OPENAI_API_KEY=your_key_here\n"
-        "Get a key at https://platform.openai.com/"
+        "Get a key at https://platform.openai.com/; pip install openai"
     )
     fallback = "piper_tts"
     fallback_tools = ["piper_tts"]
@@ -68,6 +71,7 @@ class OpenAITTS(BaseTool):
         "type": "object",
         "required": ["text"],
         "properties": {
+            **JOB_INPUT_PROPERTIES,
             "text": {"type": "string"},
             "voice": {
                 "type": "string",
@@ -109,13 +113,13 @@ class OpenAITTS(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50, network_required=True
     )
-    retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
+    retry_policy = RetryPolicy(max_retries=0)
     idempotency_key_fields = ["text", "voice", "model", "format", "response_format", "instructions", "speed"]
     side_effects = ["writes audio file to output_path", "calls OpenAI API"]
     user_visible_verification = ["Listen to generated audio for intelligibility and tone"]
 
     def get_status(self) -> ToolStatus:
-        if os.environ.get("OPENAI_API_KEY"):
+        if os.environ.get("OPENAI_API_KEY") and sdk_available("openai", "OpenAI"):
             return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
 
@@ -126,18 +130,30 @@ class OpenAITTS(BaseTool):
     def _supports_instructions(model: str) -> bool:
         return model.startswith("gpt-4o-mini-tts")
 
+    def normalize_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(inputs)
+        normalized["response_format"] = inputs.get("response_format") or inputs.get("format", "mp3")
+        normalized.pop("format", None)
+        for key in ("model", "voice", "speed"):
+            normalized.setdefault(key, self.input_schema["properties"][key]["default"])
+        if inputs.get("instructions") and not self._supports_instructions(normalized["model"]):
+            raise ValueError("OpenAI TTS instructions require gpt-4o-mini-tts")
+        if inputs.get("input_type") == "ssml":
+            raise ValueError("OpenAI TTS does not implement SSML")
+        return normalized
+
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        if not os.environ.get("OPENAI_API_KEY"):
-            return ToolResult(success=False, error="No OpenAI API key. " + self.install_instructions)
+        if self.get_status() != ToolStatus.AVAILABLE:
+            return ToolResult(success=False, error="OpenAI key or SDK unavailable. " + self.install_instructions,
+                              cost_status="not_submitted")
 
-        start = time.time()
+        start = time.monotonic()
         try:
-            result = self._generate(inputs)
+            result = self._generate(self.normalize_inputs(inputs))
         except Exception as exc:
-            return ToolResult(success=False, error=f"OpenAI TTS failed: {exc}")
+            return ToolResult(success=False, error=f"OpenAI TTS failed: {exc}", cost_status="not_submitted")
 
-        result.duration_seconds = round(time.time() - start, 2)
-        result.cost_usd = self.estimate_cost(inputs)
+        result.duration_seconds = round(time.monotonic() - start, 2)
         return result
 
     def _generate(self, inputs: dict[str, Any]) -> ToolResult:
@@ -158,10 +174,6 @@ class OpenAITTS(BaseTool):
                 ),
             )
 
-        client = OpenAI()
-        output_path = Path(inputs.get("output_path", f"openai_tts.{fmt}"))
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
         kwargs: dict[str, Any] = {
             "model": model,
             "voice": voice,
@@ -173,10 +185,27 @@ class OpenAITTS(BaseTool):
         if inputs.get("speed") and inputs["speed"] != 1.0:
             kwargs["speed"] = inputs["speed"]
 
-        with client.audio.speech.with_streaming_response.create(**kwargs) as response:
-            response.stream_to_file(output_path)
-
-        audio_duration = probe_duration(output_path)
+        job = None
+        try:
+            deadline = Deadline(inputs.get("timeout_seconds", 900))
+            job = ProviderJob.open(inputs, self.provider, model, self.estimate_cost(inputs))
+            job.require_resumable()
+            if job.should_submit:
+                client = OpenAI(max_retries=0, timeout=deadline.remaining(120))
+                job.submitting()
+                temporary = job.path.with_suffix(".download")
+                try:
+                    with client.audio.speech.with_streaming_response.create(**kwargs) as response:
+                        response.stream_to_file(temporary)
+                    job.stage([temporary.read_bytes()])
+                finally:
+                    temporary.unlink(missing_ok=True)
+                deadline.remaining()
+            output_path = Path(inputs.get("output_path", job.root / f"openai_tts.{fmt}"))
+            job.deliver([output_path])
+            audio_duration = probe_duration(output_path)
+        except Exception as exc:
+            return job.failure(exc) if job else ToolResult(success=False, error=str(exc), cost_status="not_submitted")
 
         return ToolResult(
             success=True,
@@ -191,7 +220,14 @@ class OpenAITTS(BaseTool):
                 "text_length": len(text),
                 "audio_duration_seconds": round(audio_duration, 2) if audio_duration else None,
                 "output": str(output_path),
+                **job.metadata(),
             },
             artifacts=[str(output_path)],
             model=model,
+            cost_usd=self.estimate_cost(inputs),
+            cost_status="estimated",
         )
+
+    def validate_paid_recovery(self, inputs: dict[str, Any]) -> None:
+        inputs = self.normalize_inputs(inputs)
+        ProviderJob.validate_recovery(inputs, self.provider, inputs["model"], self.estimate_cost(inputs))

@@ -6,6 +6,7 @@ import os
 import time
 from pathlib import Path
 from typing import Any
+from lib.provider_jobs import Deadline, ProviderJob, fal_result, safe_get, upload_fal_image, reject_unsupported_media, JOB_INPUT_PROPERTIES
 
 from tools.base_tool import (
     BaseTool,
@@ -13,6 +14,7 @@ from tools.base_tool import (
     ExecutionMode,
     ResourceProfile,
     RetryPolicy,
+    ResumeSupport,
     ToolResult,
     ToolRuntime,
     ToolStability,
@@ -31,6 +33,7 @@ class GeminiOmniFalVideo(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
+    resume_support = ResumeSupport.FROM_CHECKPOINT
     agent_skills = ["gemini-omni", "ai-video-gen"]
     capabilities = [
         "text_to_video",
@@ -61,6 +64,7 @@ class GeminiOmniFalVideo(BaseTool):
         "type": "object",
         "required": ["prompt"],
         "properties": {
+            **JOB_INPUT_PROPERTIES,
             "prompt": {"type": "string"},
             "operation": {
                 "type": "string",
@@ -92,9 +96,7 @@ class GeminiOmniFalVideo(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
-    retry_policy = RetryPolicy(
-        max_retries=2, retryable_errors=["rate_limit", "timeout"]
-    )
+    retry_policy = RetryPolicy(max_retries=0)
     idempotency_key_fields = [
         "prompt",
         "operation",
@@ -118,100 +120,86 @@ class GeminiOmniFalVideo(BaseTool):
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
         return 90.0
 
+    def normalize_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        reject_unsupported_media(inputs, self.input_schema["properties"])
+        normalized = dict(inputs)
+        if inputs.get("model") or inputs.get("model_name"):
+            raise ValueError("Gemini Omni fal has fixed operation-specific endpoints, not a model override")
+        refs = inputs.get("reference_image_urls") or inputs.get("reference_image_paths")
+        single = inputs.get("image_url") or inputs.get("image_path")
+        normalized.setdefault("operation", "reference_to_video" if refs else (
+            "image_to_video" if single else "text_to_video"))
+        operation = normalized["operation"]
+        if operation not in self.capabilities:
+            raise ValueError(f"Unsupported Gemini Omni operation: {operation}")
+        count = len(inputs.get("reference_image_urls") or []) + len(inputs.get("reference_image_paths") or []) + bool(single)
+        if operation in {"text_to_video", "edit_video"} and count:
+            raise ValueError(f"{operation} does not accept reference images on fal.ai")
+        if operation in {"image_to_video", "reference_to_video"} and not count:
+            raise ValueError(f"{operation} requires at least one reference image")
+        if operation == "image_to_video" and count != 1:
+            raise ValueError("image_to_video accepts exactly one image; use reference_to_video")
+        if operation == "edit_video" and not inputs.get("video_url"):
+            raise ValueError("edit_video requires video_url")
+        if inputs.get("video_path") or (operation != "edit_video" and inputs.get("video_url")):
+            raise ValueError("Source video is only supported as video_url in edit_video")
+        if any(inputs.get(k) for k in ("reference_video_urls", "reference_audio_urls")):
+            raise ValueError("Gemini Omni fal does not implement video/audio reference arrays")
+        normalized.setdefault("duration", 8)
+        normalized.setdefault("aspect_ratio", "16:9")
+        if not 3 <= int(normalized["duration"]) <= 10:
+            raise ValueError("duration must be between 3 and 10")
+        return normalized
+
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         api_key = self._api_key()
         if not api_key:
             return ToolResult(
-                success=False, error="FAL_KEY not set. " + self.install_instructions
+                success=False, error="FAL_KEY not set. " + self.install_instructions, cost_status="not_submitted"
             )
         import requests
-        from tools.video._shared import probe_output, upload_image_fal
+        from tools.video._shared import probe_output
 
-        operation = inputs.get("operation", "text_to_video")
-        urls = list(inputs.get("reference_image_urls") or [])
-        for local in inputs.get("reference_image_paths") or []:
-            urls.append(upload_image_fal(local))
-        if inputs.get("image_url"):
-            urls.insert(0, inputs["image_url"])
-        elif inputs.get("image_path"):
-            urls.insert(0, upload_image_fal(inputs["image_path"]))
-        if operation in {"image_to_video", "reference_to_video"} and not urls:
-            return ToolResult(
-                success=False,
-                error=f"{operation} requires at least one reference image",
-            )
-
+        started = time.monotonic()
+        job = None
         endpoints = {
             "text_to_video": "google/gemini-omni-flash",
             "image_to_video": "google/gemini-omni-flash/image-to-video",
             "reference_to_video": "google/gemini-omni-flash/reference-to-video",
             "edit_video": "google/gemini-omni-flash/edit",
         }
-        if operation not in endpoints:
-            return ToolResult(
-                success=False, error=f"unsupported Gemini Omni operation: {operation}"
-            )
-        if operation in {"text_to_video", "edit_video"} and urls:
-            return ToolResult(
-                success=False,
-                error=f"{operation} does not accept reference images on fal.ai",
-            )
-        endpoint = endpoints[operation]
-        payload: dict[str, Any] = {
-            "prompt": inputs["prompt"],
-            "aspect_ratio": inputs.get("aspect_ratio", "16:9"),
-            "duration": int(inputs.get("duration", 8)),
-        }
-        if operation == "image_to_video":
-            payload["image_url"] = urls[0]
-        elif operation == "reference_to_video":
-            payload["image_urls"] = urls
-        elif operation == "edit_video":
-            if not inputs.get("video_url"):
-                return ToolResult(success=False, error="edit_video requires video_url")
-            payload = {"prompt": inputs["prompt"], "video_url": inputs["video_url"]}
-        headers = {
-            "Authorization": f"Key {api_key}",
-            "Content-Type": "application/json",
-        }
-        started = time.time()
         try:
-            submit = requests.post(
-                f"https://queue.fal.run/{endpoint}",
-                headers=headers,
-                json=payload,
-                timeout=30,
-            )
-            submit.raise_for_status()
-            queued = submit.json()
-            while True:
-                time.sleep(5)
-                status_response = requests.get(
-                    queued["status_url"], headers=headers, timeout=15
-                )
-                status_response.raise_for_status()
-                status = status_response.json().get("status")
-                if status == "COMPLETED":
-                    break
-                if status in {"FAILED", "CANCELLED"}:
-                    return ToolResult(
-                        success=False,
-                        error=f"fal.ai Gemini Omni generation {status.lower()}",
-                    )
-            result_response = requests.get(
-                queued["response_url"], headers=headers, timeout=30
-            )
-            result_response.raise_for_status()
-            video_url = result_response.json()["video"]["url"]
-            download = requests.get(video_url, timeout=120)
-            download.raise_for_status()
-            output_path = Path(inputs.get("output_path", "gemini_omni_fal_output.mp4"))
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(download.content)
+            inputs = self.normalize_inputs(inputs)
+            operation = inputs["operation"]
+            endpoint = endpoints[operation]
+            deadline = Deadline(inputs.get("timeout_seconds", 900))
+            job = ProviderJob.open(inputs, self.provider, endpoint, self.estimate_cost(inputs))
+            job.require_resumable()
+            payload = {}
+            if job.should_submit:
+                urls = list(inputs.get("reference_image_urls") or [])
+                local_paths = list(inputs.get("reference_image_paths") or [])
+                if inputs.get("image_path") and not inputs.get("image_url"):
+                    local_paths.insert(0, inputs["image_path"])
+                for local in local_paths:
+                    urls.append(upload_fal_image(local, api_key, deadline))
+                if inputs.get("image_url"):
+                    urls.insert(0, inputs["image_url"])
+                payload = {"prompt": inputs["prompt"], "aspect_ratio": inputs["aspect_ratio"],
+                           "duration": int(inputs["duration"])}
+                if operation == "image_to_video":
+                    payload["image_url"] = urls[0]
+                elif operation == "reference_to_video":
+                    payload["image_urls"] = urls
+                elif operation == "edit_video":
+                    payload = {"prompt": inputs["prompt"], "video_url": inputs["video_url"]}
+            if not job.record.get("staged"):
+                data = fal_result(job, endpoint, payload, api_key, deadline, inputs.get("poll_interval", 5))
+                job.stage([safe_get(requests.get, data["video"]["url"], deadline).content])
+            output_path = Path(inputs.get("output_path", job.root / "gemini_omni_fal_output.mp4"))
+            job.deliver([output_path])
         except Exception as exc:
-            return ToolResult(
-                success=False, error=f"fal.ai Gemini Omni generation failed: {exc}"
-            )
+            return job.failure(exc) if job else ToolResult(success=False, error=str(exc), cost_status="not_submitted")
         return ToolResult(
             success=True,
             data={
@@ -220,10 +208,19 @@ class GeminiOmniFalVideo(BaseTool):
                 "model": endpoint,
                 "operation": operation,
                 "output": str(output_path),
+                **job.metadata(),
                 **probe_output(output_path),
             },
             artifacts=[str(output_path)],
             cost_usd=self.estimate_cost(inputs),
-            duration_seconds=round(time.time() - started, 2),
+            duration_seconds=round(time.monotonic() - started, 2),
             model=endpoint,
+            cost_status="estimated",
+            provider_request_id=job.job_id,
         )
+
+    def validate_paid_recovery(self, inputs: dict[str, Any]) -> None:
+        inputs = self.normalize_inputs(inputs)
+        suffix = {"text_to_video": "", "image_to_video": "/image-to-video",
+                  "reference_to_video": "/reference-to-video", "edit_video": "/edit"}[inputs["operation"]]
+        ProviderJob.validate_recovery(inputs, self.provider, f"google/gemini-omni-flash{suffix}", self.estimate_cost(inputs))

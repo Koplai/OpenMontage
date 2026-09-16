@@ -19,6 +19,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
+@pytest.fixture(autouse=True)
+def provider_unit_boundary(monkeypatch, tmp_path):
+    """Only fake fal transports run here; budget integration has its own suite."""
+    (tmp_path / "project.json").write_text('{"project_id":"test","pipeline_type":"framework-smoke"}')
+    monkeypatch.setattr("lib.budget.governed_execute", lambda tool, inputs, fn, *a, **k:
+                        fn(tool, {**inputs, "project_dir": str(tmp_path)}, *a, **k))
+    monkeypatch.setattr("lib.budget.record_paid_submission", lambda _: None)
+
+
 class _FakeResponse:
     def __init__(self, json_data: dict | None = None, status_code: int = 200, content: bytes = b""):
         self._json_data = json_data or {}
@@ -69,6 +78,7 @@ def mock_requests(monkeypatch):
     fake_requests.post = mock_post
     fake_requests.get = mock_get
     fake_requests.HTTPError = type("HTTPError", (Exception,), {})
+    fake_requests.RequestException = type("RequestException", (Exception,), {})
     monkeypatch.setitem(sys.modules, "requests", fake_requests)
     return mock_post, mock_get
 
@@ -189,17 +199,22 @@ class TestAsyncPolling:
 
         result = seedream_tool.execute({"prompt": "bad"})
         assert not result.success
-        assert status in result.error
+        assert result.data["submission_state"] == "failed"
+        assert result.data["job_id"] == "req_123"
+        assert result.cost_usd > 0
 
-    def test_timeout_returns_error(self, seedream_tool, mock_requests):
+    def test_timeout_returns_error(self, seedream_tool, mock_requests, monkeypatch):
         mock_post, mock_get = mock_requests
         mock_post.return_value = _build_submit_response()
         mock_get.side_effect = [_build_status_response("IN_PROGRESS")] * 100
 
-        with patch("tools.graphics.seedream_image.time.sleep"):
-            result = seedream_tool.execute({"prompt": "timeout"})
+        now = [0.0]
+        monkeypatch.setattr("lib.provider_jobs.time.monotonic", lambda: now[0])
+        monkeypatch.setattr("lib.provider_jobs.time.sleep", lambda delay: now.__setitem__(0, now[0] + delay))
+        result = seedream_tool.execute({"prompt": "timeout"})
         assert not result.success
-        assert "timed out" in result.error.lower()
+        assert "TimeoutError" in result.error
+        assert now[0] == 300
 
 
 # ========== Validation & Error Handling ==========
@@ -237,7 +252,9 @@ class TestValidation:
         mock_post.return_value = _FakeResponse({})
         result = seedream_tool.execute({"prompt": "no id"})
         assert not result.success
-        assert "request_id" in result.error.lower()
+        assert result.data["submission_state"] == "submitting"
+        assert result.data["job_id"] is None
+        assert result.cost_usd > 0
 
     def test_completed_without_images_raises_error(self, seedream_tool, mock_requests):
         mock_post, mock_get = mock_requests
@@ -248,7 +265,8 @@ class TestValidation:
         ]
         result = seedream_tool.execute({"prompt": "empty"})
         assert not result.success
-        assert "no images" in result.error.lower()
+        assert result.data["submission_state"] == "generated"
+        assert result.cost_usd > 0
 
 
 # ========== Metadata & Integration ==========
@@ -259,9 +277,9 @@ class TestMetadata:
         _setup_mock_execution(mock_post, mock_get, num_images=1)
 
         result = seedream_tool.execute({"prompt": "m", "output_path": str(tmp_path / "m.png")})
-        assert result.data["provider"] == "seedream"
-        assert result.data["model"] == "seedream_v5"
-        assert result.model == "fal-ai/bytedance/seedream/v5"
+        assert result.data["provider"] == "bytedance"
+        assert result.data["model"] == "bytedance/seedream/v5/pro/text-to-image"
+        assert result.model == result.data["model"]
 
     def test_cost_matches_estimate(self, seedream_tool, tmp_path, mock_requests):
         mock_post, mock_get = mock_requests

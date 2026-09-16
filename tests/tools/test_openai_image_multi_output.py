@@ -18,6 +18,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
+@pytest.fixture(autouse=True)
+def provider_unit_boundary(monkeypatch, tmp_path):
+    """Paid governance is tested separately; this module has a fake SDK."""
+    (tmp_path / "project.json").write_text('{"project_id":"test","pipeline_type":"framework-smoke"}')
+    monkeypatch.setattr("lib.budget.governed_execute", lambda tool, inputs, fn, *a, **k:
+                        fn(tool, {**inputs, "project_dir": str(tmp_path)}, *a, **k))
+
+
 class _FakeImage:
     def __init__(self, payload: bytes):
         self.b64_json = base64.b64encode(payload).decode()

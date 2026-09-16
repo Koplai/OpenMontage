@@ -16,6 +16,15 @@ from tools.base_tool import ToolStatus
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+@pytest.fixture(autouse=True)
+def provider_unit_boundary(monkeypatch, tmp_path):
+    """Only provider behavior here; the separate budget suite exercises its gate."""
+    (tmp_path / "project.json").write_text('{"project_id":"test","pipeline_type":"framework-smoke"}')
+    monkeypatch.setattr("lib.budget.governed_execute", lambda tool, inputs, fn, *a, **k:
+                        fn(tool, {**inputs, "project_dir": str(tmp_path)}, *a, **k))
+    monkeypatch.setattr("lib.budget.record_paid_submission", lambda _: None)
+
+
 def test_sora_video_is_discovered_as_openai_video_provider():
     from tools.tool_registry import ToolRegistry
 
@@ -73,7 +82,7 @@ def test_sora_video_reports_unavailable_when_openai_sdk_lacks_video_api(monkeypa
     assert SoraVideo().get_status() == ToolStatus.UNAVAILABLE
 
 
-def test_sora_video_executes_with_current_create_and_poll_sdk_surface(monkeypatch, tmp_path):
+def test_sora_video_persists_create_before_polling_sdk_surface(monkeypatch, tmp_path):
     from tools.video.sora_video import SoraVideo
 
     calls = {}
@@ -87,16 +96,19 @@ def test_sora_video_executes_with_current_create_and_poll_sdk_surface(monkeypatc
         status = "completed"
 
     class FakeVideos:
-        def create_and_poll(self, **payload):
+        def create(self, **payload):
             calls["payload"] = payload
             return FakeVideo()
 
-        def download_content(self, video_id, variant):
+        def retrieve(self, video_id, **kwargs):
+            return FakeVideo()
+
+        def download_content(self, video_id, variant, **kwargs):
             calls["download"] = (video_id, variant)
             return FakeContent()
 
     class FakeOpenAI:
-        def __init__(self):
+        def __init__(self, **kwargs):
             self.videos = FakeVideos()
 
     fake_openai = types.ModuleType("openai")

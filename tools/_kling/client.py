@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import requests
+from lib.provider_jobs import Deadline, atomic_write
 
 from .errors import KlingAPIError, is_retryable_kling_error
 from .schemas import (
@@ -36,6 +37,7 @@ class KlingClient:
         self.base_url = (base_url or os.environ.get("KLING_API_BASE_URL") or DEFAULT_API_BASE_URL).rstrip("/")
         self.session = session or requests.Session()
         self.max_retries = max_retries
+        self.deadline: Deadline | None = None
 
     @property
     def headers(self) -> dict[str, str]:
@@ -58,12 +60,25 @@ class KlingClient:
 
     def download(self, url: str, output_path: Path, timeout: int = 180) -> Path:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        response = self.session.get(url, timeout=timeout)
-        self._raise_for_http_error(response)
+        deadline = self.deadline or Deadline(timeout)
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self.session.get(url, timeout=deadline.remaining(timeout))
+                self._raise_for_http_error(response)
+                break
+            except (requests.RequestException, KlingAPIError) as exc:
+                if attempt == self.max_retries or (
+                    isinstance(exc, KlingAPIError) and not is_retryable_kling_error(exc)
+                ):
+                    raise
+                deadline.sleep(2.0 * (attempt + 1))
         content = getattr(response, "content", None)
         if content is None and hasattr(response, "iter_content"):
             content = b"".join(chunk for chunk in response.iter_content(chunk_size=1024 * 128) if chunk)
-        output_path.write_bytes(content or b"")
+        deadline.remaining()
+        if not content:
+            raise ValueError("Kling returned empty media")
+        atomic_write(output_path, content)
         return output_path
 
     def create_classic_task(self, path: str, payload: dict[str, Any]) -> str:
@@ -81,8 +96,9 @@ class KlingClient:
         timeout_seconds: int = 900,
         poll_interval: float = 5.0,
     ) -> list[dict[str, Any]]:
-        deadline = time.time() + timeout_seconds
-        while time.time() < deadline:
+        self.deadline = self.deadline or Deadline(timeout_seconds)
+        while True:
+            self.deadline.remaining()
             data = self.get(f"{path.rstrip('/')}/{task_id}")
             payload = data.get("data") or {}
             status = payload.get("task_status") or payload.get("status")
@@ -97,8 +113,7 @@ class KlingClient:
                 raise KlingAPIError(str(message), code=payload.get("task_status"), response=data)
             if status not in CLASSIC_PENDING_STATUSES:
                 raise KlingAPIError(f"Unexpected Kling Classic task status {status!r}", response=data)
-            time.sleep(min(poll_interval, max(0.0, deadline - time.time())))
-        raise TimeoutError(f"Kling Classic task {task_id} timed out after {timeout_seconds}s")
+            self.deadline.sleep(poll_interval)
 
     def create_turbo(self, path: str, payload: dict[str, Any]) -> str:
         data = self.post(path, payload)
@@ -113,8 +128,9 @@ class KlingClient:
         timeout_seconds: int = 900,
         poll_interval: float = 5.0,
     ) -> list[dict[str, Any]]:
-        deadline = time.time() + timeout_seconds
-        while time.time() < deadline:
+        self.deadline = self.deadline or Deadline(timeout_seconds)
+        while True:
+            self.deadline.remaining()
             data = self.get("/tasks", params={"task_ids": task_id})
             records = data.get("data") or []
             if not records:
@@ -131,30 +147,40 @@ class KlingClient:
                 raise KlingAPIError(str(message), code=record.get("code"), request_id=record.get("request_id"), response=data)
             if status not in TURBO_PENDING_STATUSES:
                 raise KlingAPIError(f"Unexpected Kling Turbo task status {status!r}", response=data)
-            time.sleep(min(poll_interval, max(0.0, deadline - time.time())))
-        raise TimeoutError(f"Kling Turbo task {task_id} timed out after {timeout_seconds}s")
+            self.deadline.sleep(poll_interval)
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         url = self._url(path)
         last_error: KlingAPIError | None = None
-        for attempt in range(self.max_retries + 1):
+        # A read timeout/5xx can follow an accepted paid submission. Without a
+        # documented idempotency guarantee, retrying that POST can bill twice.
+        retries = self.max_retries if method.lower() == "get" else 0
+        for attempt in range(retries + 1):
             try:
-                response = getattr(self.session, method)(url, headers=self.headers, timeout=30, **kwargs)
+                timeout = self.deadline.remaining(30) if self.deadline else 30
+                response = getattr(self.session, method)(url, headers=self.headers, timeout=timeout, **kwargs)
                 self._raise_for_http_error(response)
                 data = response.json()
                 self._raise_for_business_error(data)
                 return data
             except KlingAPIError as error:
                 last_error = error
-                if attempt >= self.max_retries or not is_retryable_kling_error(error):
+                if attempt >= retries or not is_retryable_kling_error(error):
                     raise
-                time.sleep(min(2.0 * (attempt + 1), 8.0))
+                self._backoff(attempt)
             except requests.RequestException as exc:
                 last_error = KlingAPIError(str(exc))
-                if attempt >= self.max_retries:
+                if attempt >= retries:
                     raise last_error from exc
-                time.sleep(min(2.0 * (attempt + 1), 8.0))
+                self._backoff(attempt)
         raise last_error or KlingAPIError("Kling API request failed")
+
+    def _backoff(self, attempt: int) -> None:
+        seconds = min(2.0 * (attempt + 1), 8.0)
+        if self.deadline:
+            self.deadline.sleep(seconds)
+        else:
+            time.sleep(seconds)
 
     def _url(self, path: str) -> str:
         if path.startswith("http://") or path.startswith("https://"):
