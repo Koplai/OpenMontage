@@ -10,18 +10,28 @@ Implements the budget governance rules from the spec:
 from __future__ import annotations
 
 import json
+import copy
+import math
+import threading
 import uuid
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
+from decimal import Decimal, localcontext
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
-from lib.config_model import BudgetMode
+from jsonschema import Draft202012Validator, FormatChecker
+
+from lib.budget_transaction import atomic_write_json, ledger_lock
+from lib.config_model import BudgetConfig, BudgetMode
 
 
 class EntryStatus(str, Enum):
     ESTIMATED = "estimated"
     RESERVED = "reserved"
+    EXECUTING = "executing"
+    UNKNOWN = "unknown"
     COMPLETED = "completed"
     FAILED = "failed"
     REFUNDED = "refunded"
@@ -46,72 +56,136 @@ class CostTracker:
         reserve_pct: float = 0.10,
         single_action_approval_usd: float = 0.50,
         require_approval_for_new_paid_tool: bool = True,
-        mode: BudgetMode = BudgetMode.WARN,
+        mode: BudgetMode = BudgetMode.CAP,
         cost_log_path: Optional[Path] = None,
+        project: Optional[dict[str, str]] = None,
     ) -> None:
-        self.budget_total_usd = budget_total_usd
-        self.reserve_pct = reserve_pct
-        self.single_action_approval_usd = single_action_approval_usd
-        self.require_approval_for_new_paid_tool = require_approval_for_new_paid_tool
-        self.mode = mode
-        self.cost_log_path = cost_log_path
-        self.entries: list[dict[str, Any]] = []
+        self._policy = BudgetConfig(
+            total_usd=budget_total_usd, reserve_pct=reserve_pct,
+            single_action_approval_usd=single_action_approval_usd,
+            require_approval_for_new_paid_tool=require_approval_for_new_paid_tool, mode=mode,
+        )
+        if cost_log_path is not None and Path(cost_log_path).is_symlink():
+            raise ValueError("Cost ledger cannot be a symlink")
+        self.cost_log_path = Path(cost_log_path).resolve() if cost_log_path is not None else None
+        self._entries: list[dict[str, Any]] = []
         self._approved_tools: set[str] = set()
-
-        if cost_log_path and cost_log_path.exists():
-            self._load()
+        self._project = copy.deepcopy(project)
+        self._thread_lock = threading.RLock()
+        self._has_loaded = False
+        # Initialization itself participates in the same lock as all mutations.
+        # Persist even an empty policy: later constructors may not replace it.
+        with self._transaction():
+            pass
 
     # ---- Budget calculations ----
 
     @property
+    def budget_total_usd(self) -> float:
+        return self._policy.total_usd
+
+    @property
+    def reserve_pct(self) -> float:
+        return self._policy.reserve_pct
+
+    @property
+    def single_action_approval_usd(self) -> float:
+        return self._policy.single_action_approval_usd
+
+    @property
+    def require_approval_for_new_paid_tool(self) -> bool:
+        return self._policy.require_approval_for_new_paid_tool
+
+    @property
+    def mode(self) -> BudgetMode:
+        return self._policy.mode
+
+    @property
+    def entries(self) -> list[dict[str, Any]]:
+        with self._transaction(write=False):
+            return copy.deepcopy(self._entries)
+
+    def _reserved(self) -> float:
+        return float(self._sum(e["reserved_usd"] for e in self._entries))
+
+    def _spent(self) -> float:
+        return float(self._sum(e["actual_usd"] for e in self._entries))
+
+    @staticmethod
+    def _sum(values) -> Decimal:
+        # Preserve the decimal USD inputs without rounding away tiny charges or
+        # rejecting an exact .10 + .20 reservation against a .30 cap.
+        with localcontext() as context:
+            context.prec = 400
+            return sum((Decimal(str(value)) for value in values), Decimal(0))
+
+    def _available(self, *, holdback: bool = True) -> Decimal:
+        with localcontext() as context:
+            context.prec = 400
+            capacity = Decimal(str(self.budget_total_usd))
+            if holdback:
+                capacity *= 1 - Decimal(str(self.reserve_pct))
+            return capacity - self._sum(e["actual_usd"] for e in self._entries) - self._sum(
+                e["reserved_usd"] for e in self._entries
+            )
+
+    def _usable(self) -> float:
+        return float(max(Decimal(0), self._available()))
+
+    @property
     def budget_reserved_usd(self) -> float:
-        return sum(
-            e.get("reserved_usd", 0.0)
-            for e in self.entries
-            if e["status"] == EntryStatus.RESERVED.value
-        )
+        with self._transaction(write=False):
+            return self._reserved()
 
     @property
     def budget_spent_usd(self) -> float:
-        return sum(
-            e.get("actual_usd", 0.0)
-            for e in self.entries
-            if e["status"] in (EntryStatus.COMPLETED.value, EntryStatus.FAILED.value)
-        )
+        with self._transaction(write=False):
+            return self._spent()
 
     @property
     def budget_remaining_usd(self) -> float:
-        return self.budget_total_usd - self.budget_spent_usd - self.budget_reserved_usd
+        with self._transaction(write=False):
+            return float(self._available(holdback=False))
 
     @property
     def usable_budget_usd(self) -> float:
         """Budget minus the reserve holdback."""
-        holdback = self.budget_total_usd * self.reserve_pct
-        return max(0.0, self.budget_remaining_usd - holdback)
+        with self._transaction(write=False):
+            return self._usable()
 
     def cost_snapshot(self) -> dict[str, float]:
-        return {
-            "total_spent_usd": round(self.budget_spent_usd, 4),
-            "total_reserved_usd": round(self.budget_reserved_usd, 4),
-            "budget_remaining_usd": round(self.budget_remaining_usd, 4),
-        }
+        with self._transaction(write=False):
+            return {
+                "total_spent_usd": self._spent(),
+                "total_reserved_usd": self._reserved(),
+                "budget_remaining_usd": float(self._available(holdback=False)),
+            }
 
     # ---- Core operations ----
 
-    def estimate(self, tool: str, operation: str, estimated_usd: float) -> str:
-        """Record an estimate. Returns entry ID."""
+    def estimate(
+        self, tool: str, operation: str, estimated_usd: float, *,
+        request_hash: Optional[str] = None,
+    ) -> str:
+        """Record an estimate, optionally bound to a resolved request hash."""
+        estimated_usd = self.money(estimated_usd)
+        if not isinstance(tool, str) or not tool.strip() or not isinstance(operation, str) or not operation.strip():
+            raise ValueError("tool and operation must be nonempty strings")
         entry_id = self._new_id()
-        self.entries.append({
+        entry = {
             "id": entry_id,
             "tool": tool,
             "operation": operation,
             "status": EntryStatus.ESTIMATED.value,
-            "estimated_usd": round(estimated_usd, 4),
+            "estimated_usd": estimated_usd,
             "reserved_usd": 0.0,
             "actual_usd": 0.0,
             "timestamp": self._now(),
-        })
-        self._save()
+        }
+        if request_hash is not None:
+            entry["request_hash"] = request_hash
+        with self._transaction():
+            self._entries.append(entry)
         return entry_id
 
     def reserve(self, entry_id: str) -> None:
@@ -120,11 +194,19 @@ class CostTracker:
         Raises BudgetExceededError in cap mode, or ApprovalRequiredError
         when the action exceeds the single-action approval threshold.
         """
-        entry = self._find(entry_id)
+        with self._transaction():
+            entry = self._find(entry_id)
+            if entry["status"] == EntryStatus.RESERVED.value:
+                return
+            self._require_status(entry, EntryStatus.ESTIMATED)
+            self._reserve(entry)
+
+    def _reserve(self, entry: dict, *, paid_execution: bool = False) -> None:
         estimated = entry["estimated_usd"]
+        approved = entry.get("approval", {}).get("amount_usd") == estimated
 
         # Check single-action approval threshold
-        if estimated > self.single_action_approval_usd:
+        if estimated > self.single_action_approval_usd and not approved:
             if self.mode != BudgetMode.OBSERVE:
                 raise ApprovalRequiredError(
                     f"Action costs ${estimated:.2f}, exceeds "
@@ -132,7 +214,7 @@ class CostTracker:
                 )
 
         # Check new paid tool approval
-        if self.require_approval_for_new_paid_tool and estimated > 0:
+        if self.require_approval_for_new_paid_tool and estimated > 0 and not approved:
             if entry["tool"] not in self._approved_tools:
                 if self.mode != BudgetMode.OBSERVE:
                     raise ApprovalRequiredError(
@@ -140,12 +222,12 @@ class CostTracker:
                     )
 
         # Check budget
-        if estimated > self.usable_budget_usd:
+        if Decimal(str(estimated)) > max(Decimal(0), self._available()):
             message = (
                 f"Reservation of ${estimated:.2f} exceeds usable budget "
-                f"${self.usable_budget_usd:.2f}"
+                f"${self._usable():.2f}"
             )
-            if self.mode == BudgetMode.CAP:
+            if self.mode == BudgetMode.CAP or paid_execution:
                 raise BudgetExceededError(message)
             if self.mode == BudgetMode.WARN:
                 entry["budget_warning"] = True
@@ -154,29 +236,153 @@ class CostTracker:
         entry["status"] = EntryStatus.RESERVED.value
         entry["reserved_usd"] = estimated
         entry["timestamp"] = self._now()
-        self._save()
 
     def approve_tool(self, tool: str) -> None:
-        """Mark a tool as approved for paid operations."""
-        self._approved_tools.add(tool)
-        self._save()
+        """Legacy first-tool acknowledgement; never authorizes real execution."""
+        if not isinstance(tool, str) or not tool.strip():
+            raise ValueError("tool must be a nonempty string")
+        with self._transaction():
+            self._approved_tools.add(tool)
+
+    def approve_entry(
+        self, entry_id: str, *, request_hash: str, approved_usd: float, approved_by: str,
+    ) -> None:
+        """Record an operator's exact request/amount approval, not blanket consent."""
+        approved_usd = self.money(approved_usd)
+        if not isinstance(approved_by, str) or not approved_by.strip():
+            raise ValueError("approved_by must identify the private operator")
+        with self._transaction():
+            entry = self._find(entry_id)
+            self._require_status(entry, EntryStatus.ESTIMATED)
+            if entry.get("request_hash") != request_hash or approved_usd != entry["estimated_usd"]:
+                raise ApprovalRequiredError("Approval must match the exact request and estimated amount")
+            approval = entry.get("approval")
+            if approval is not None:
+                if approval["amount_usd"] == approved_usd and approval["approved_by"] == approved_by:
+                    return
+                raise ValueError("An existing approval cannot be rewritten")
+            entry["approval"] = {
+                "amount_usd": approved_usd, "approved_by": approved_by, "timestamp": self._now(),
+            }
+
+    def begin_execution(self, tool: str, request_hash: str, estimated_usd: float) -> str:
+        """Atomically claim one exact approval and reserve before dispatch.
+
+        A claimed entry is never replayed, including after a process crash.
+        Multiple explicit approvals of the same request authorize multiple calls.
+        """
+        estimated_usd = self.money(estimated_usd)
+        if self.cost_log_path is None or self._project is None:
+            raise ApprovalRequiredError("Paid execution requires a durable project-bound ledger")
+        with self._transaction():
+            candidates = [
+                entry for entry in self._entries
+                if entry["tool"] == tool and entry.get("request_hash") == request_hash
+                and entry["estimated_usd"] == estimated_usd
+                and entry["status"] in (EntryStatus.ESTIMATED.value, EntryStatus.RESERVED.value)
+                and entry.get("approval", {}).get("amount_usd") == estimated_usd
+            ]
+            if not candidates:
+                raise ApprovalRequiredError("No unused approval for this exact paid request and amount")
+            entry = candidates[0]
+            if entry["status"] == EntryStatus.ESTIMATED.value:
+                self._reserve(entry, paid_execution=True)
+            elif self._available() < 0:
+                raise BudgetExceededError("Existing reservations exceed the paid execution cap")
+            entry["status"] = EntryStatus.EXECUTING.value
+            entry["timestamp"] = self._now()
+            return entry["id"]
 
     def reconcile(self, entry_id: str, actual_usd: float, success: bool = True) -> None:
         """Reconcile actual spend after tool execution."""
-        entry = self._find(entry_id)
-        entry["status"] = EntryStatus.COMPLETED.value if success else EntryStatus.FAILED.value
-        entry["actual_usd"] = round(actual_usd, 4)
-        entry["reserved_usd"] = 0.0
-        entry["timestamp"] = self._now()
-        self._save()
+        actual_usd = self.money(actual_usd)
+        if not isinstance(success, bool):
+            raise ValueError("success must be a boolean")
+        status = EntryStatus.COMPLETED.value if success else EntryStatus.FAILED.value
+        with self._transaction():
+            entry = self._find(entry_id)
+            if entry["status"] == status and entry["actual_usd"] == actual_usd:
+                return
+            self._require_status(entry, EntryStatus.RESERVED, EntryStatus.EXECUTING, EntryStatus.UNKNOWN)
+            entry.update(status=status, actual_usd=actual_usd, reserved_usd=0.0, timestamp=self._now())
+
+    @contextmanager
+    def recover_entry(
+        self, entry_id: str, tool: str, request_hash: str, estimated_usd: float,
+    ) -> Iterator[dict]:
+        """Serialize read/delivery recovery of one original approved operation.
+
+        This lock is per entry, not project-wide, and is released on process
+        exit. An executing entry must first be explicitly marked unknown after
+        confirming its worker has stopped; a live original call is not resumed.
+        Provider-side verification that no new submission can occur is mandatory
+        at the execution boundary, in addition to these ledger checks.
+        """
+        estimated_usd = self.money(estimated_usd)
+        if self.cost_log_path is None or self._project is None:
+            raise ApprovalRequiredError("Recovery requires a durable project ledger")
+        if not isinstance(entry_id, str) or len(entry_id) != 32 or any(c not in "0123456789abcdef" for c in entry_id):
+            raise ValueError("Invalid recovery cost entry ID")
+        path = self.cost_log_path.with_name(f"{self.cost_log_path.name}.{entry_id}.recovery")
+        with ledger_lock(path):
+            with self._transaction(write=False):
+                entry = self._find(entry_id)
+                self._require_status(entry, EntryStatus.UNKNOWN, EntryStatus.COMPLETED, EntryStatus.FAILED)
+                if (
+                    entry["tool"] != tool or entry.get("request_hash") != request_hash
+                    or entry["estimated_usd"] != estimated_usd
+                    or entry.get("approval", {}).get("amount_usd") != estimated_usd
+                ):
+                    raise ApprovalRequiredError("Recovery must match the original approved request and amount")
+                snapshot = copy.deepcopy(entry)
+            yield snapshot
+
+    def mark_unknown(self, entry_id: str, provider_request_id: Optional[str] = None) -> None:
+        """Retain the full hold when submission/billing/delivery is ambiguous."""
+        with self._transaction():
+            entry = self._find(entry_id)
+            self._require_status(entry, EntryStatus.EXECUTING, EntryStatus.UNKNOWN)
+            entry["status"] = EntryStatus.UNKNOWN.value
+            if provider_request_id is not None:
+                if not isinstance(provider_request_id, str) or not provider_request_id.strip():
+                    raise ValueError("provider_request_id must be nonempty")
+                previous = entry.get("provider_request_id")
+                if previous is not None and previous != provider_request_id:
+                    raise ValueError("A reservation cannot be reassigned to a different remote job")
+                entry["provider_request_id"] = provider_request_id
+            entry["timestamp"] = self._now()
+
+    def record_submission(self, entry_id: str, provider_request_id: str) -> None:
+        """Persist a remote request ID immediately, before polling/delivery."""
+        if not isinstance(provider_request_id, str) or not provider_request_id.strip():
+            raise ValueError("provider_request_id must be nonempty")
+        with self._transaction():
+            entry = self._find(entry_id)
+            self._require_status(entry, EntryStatus.EXECUTING, EntryStatus.UNKNOWN)
+            previous = entry.get("provider_request_id")
+            if previous is not None and previous != provider_request_id:
+                raise ValueError("A reservation cannot be reassigned to a different remote job")
+            entry["provider_request_id"] = provider_request_id
+
+    def mark_not_submitted(self, entry_id: str) -> None:
+        """Release only on a provider's explicit proof that dispatch did not occur."""
+        with self._transaction():
+            entry = self._find(entry_id)
+            if entry["status"] == EntryStatus.REFUNDED.value:
+                return
+            self._require_status(entry, EntryStatus.EXECUTING)
+            if entry.get("provider_request_id"):
+                raise ValueError("A recorded remote job cannot be declared not submitted")
+            entry.update(status=EntryStatus.REFUNDED.value, reserved_usd=0.0, timestamp=self._now())
 
     def refund(self, entry_id: str) -> None:
         """Cancel a reservation without executing."""
-        entry = self._find(entry_id)
-        entry["status"] = EntryStatus.REFUNDED.value
-        entry["reserved_usd"] = 0.0
-        entry["timestamp"] = self._now()
-        self._save()
+        with self._transaction():
+            entry = self._find(entry_id)
+            if entry["status"] == EntryStatus.REFUNDED.value:
+                return
+            self._require_status(entry, EntryStatus.ESTIMATED, EntryStatus.RESERVED)
+            entry.update(status=EntryStatus.REFUNDED.value, reserved_usd=0.0, timestamp=self._now())
 
     # ---- Reference-driven estimation ----
 
@@ -484,39 +690,118 @@ class CostTracker:
 
     # ---- Persistence ----
 
+    @contextmanager
+    def _transaction(self, *, write: bool = True) -> Iterator[None]:
+        with self._thread_lock:
+            lock = ledger_lock(self.cost_log_path) if self.cost_log_path is not None else nullcontext()
+            with lock:
+                if self.cost_log_path is not None:
+                    if self.cost_log_path.exists():
+                        self._load()
+                    elif self._has_loaded:
+                        raise ValueError("Cost ledger disappeared; refusing to reset committed spending")
+                snapshot = copy.deepcopy((self._entries, self._approved_tools, self._policy, self._project))
+                try:
+                    yield
+                    if write:
+                        self._save()
+                except BaseException:
+                    self._entries, self._approved_tools, self._policy, self._project = snapshot
+                    raise
+
+    @staticmethod
+    def _validate(data: dict) -> None:
+        schema_path = Path(__file__).resolve().parents[1] / "schemas/artifacts/cost_log.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        Draft202012Validator(schema, format_checker=FormatChecker()).validate(data)
+        # JSON Schema's numeric predicates do not reliably reject NaN/Infinity.
+        json.dumps(data, allow_nan=False)
+        BudgetConfig.model_validate(data["policy"])
+        if data["budget_total_usd"] != data["policy"]["total_usd"]:
+            raise ValueError("Ledger budget total disagrees with persisted policy")
+        seen = set()
+        for entry in data["entries"]:
+            if entry["id"] in seen:
+                raise ValueError("Duplicate cost entry ID")
+            seen.add(entry["id"])
+            for key in ("estimated_usd", "actual_usd", "reserved_usd"):
+                CostTracker.money(entry[key])
+            outstanding = entry["status"] in ("reserved", "executing", "unknown")
+            terminal_spend = entry["status"] in ("completed", "failed")
+            if outstanding and entry["reserved_usd"] != entry["estimated_usd"]:
+                raise ValueError("Outstanding entries must retain their full estimate")
+            if not outstanding and entry["reserved_usd"] != 0:
+                raise ValueError("Only outstanding entries may hold a reservation")
+            if not terminal_spend and entry["actual_usd"] != 0:
+                raise ValueError("Actual spend may not be hidden in an unspent state")
+            if "approval" in entry:
+                if not entry.get("request_hash") or entry["approval"]["amount_usd"] != entry["estimated_usd"]:
+                    raise ValueError("Approval does not match its exact request and amount")
+        if data["budget_reserved_usd"] != float(CostTracker._sum(e["reserved_usd"] for e in data["entries"])):
+            raise ValueError("Reserved total disagrees with entries")
+        if data["budget_spent_usd"] != float(CostTracker._sum(e["actual_usd"] for e in data["entries"])):
+            raise ValueError("Spent total disagrees with entries")
+
     def _save(self) -> None:
         if self.cost_log_path is None:
             return
         data = {
-            "version": "1.0",
+            "version": "2.0",
+            "policy": self._policy.model_dump(mode="json"),
             "budget_total_usd": self.budget_total_usd,
-            "budget_reserved_usd": round(self.budget_reserved_usd, 4),
-            "budget_spent_usd": round(self.budget_spent_usd, 4),
+            "budget_reserved_usd": self._reserved(),
+            "budget_spent_usd": self._spent(),
             "approved_tools": sorted(self._approved_tools),
-            "entries": self.entries,
+            "entries": self._entries,
         }
-        self.cost_log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.cost_log_path, "w") as f:
-            json.dump(data, f, indent=2)
+        if self._project is not None:
+            data["project"] = self._project
+        self._validate(data)
+        atomic_write_json(self.cost_log_path, data)
+        self._has_loaded = True
 
     def _load(self) -> None:
-        with open(self.cost_log_path) as f:  # type: ignore[arg-type]
+        with open(self.cost_log_path, encoding="utf-8") as f:  # type: ignore[arg-type]
             data = json.load(f)
-        self.entries = data.get("entries", [])
-        self.budget_total_usd = data.get("budget_total_usd", self.budget_total_usd)
-        self._approved_tools = set(data.get("approved_tools", []))
+        if data.get("version") != "2.0":
+            raise ValueError("Legacy cost ledger has no durable policy; explicit reviewed migration required")
+        self._validate(data)
+        if self._project is not None and data.get("project") != self._project:
+            raise ValueError("Cost ledger belongs to a different or unbound project")
+        self._policy = BudgetConfig.model_validate(data["policy"])
+        self._entries = data["entries"]
+        self._approved_tools = set(data["approved_tools"])
+        self._project = data.get("project")
+        self._has_loaded = True
 
     # ---- Helpers ----
 
     def _find(self, entry_id: str) -> dict[str, Any]:
-        for entry in self.entries:
+        for entry in self._entries:
             if entry["id"] == entry_id:
                 return entry
         raise KeyError(f"Cost entry {entry_id!r} not found")
 
     @staticmethod
+    def money(value: float) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("USD amount must be a finite nonnegative number")
+        try:
+            amount = float(value)
+        except OverflowError as exc:
+            raise ValueError("USD amount is too large") from exc
+        if not math.isfinite(amount) or amount < 0:
+            raise ValueError("USD amount must be finite and nonnegative")
+        return amount
+
+    @staticmethod
+    def _require_status(entry: dict, *allowed: EntryStatus) -> None:
+        if entry["status"] not in {status.value for status in allowed}:
+            raise ValueError(f"Invalid cost transition from {entry['status']!r}")
+
+    @staticmethod
     def _new_id() -> str:
-        return uuid.uuid4().hex[:12]
+        return uuid.uuid4().hex
 
     @staticmethod
     def _now() -> str:

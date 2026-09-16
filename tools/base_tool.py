@@ -23,38 +23,10 @@ from typing import Any, Callable, Optional
 
 
 def _load_dotenv() -> None:
-    """Load .env into os.environ once at import time.
+    """Use the shared environment loader for direct imports and discovery."""
+    from lib.env_loader import load_env
 
-    This ensures API keys are available before any tool is instantiated,
-    even when tools are imported directly without going through the registry.
-    Only sets variables that are not already in the environment.
-    """
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.is_file():
-        return
-    import re
-    with open(env_path, encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip()
-            # Quoted value: take the content inside the quotes verbatim.
-            if value[:1] in ("'", '"'):
-                quote = value[0]
-                end = value.find(quote, 1)
-                value = value[1:end] if end != -1 else value[1:]
-            else:
-                # Strip an inline comment ('#' at line start or after
-                # whitespace) so "VAR=   # note" yields "" not "# note".
-                match = re.search(r"(^|\s)#", value)
-                if match:
-                    value = value[: match.start()]
-                value = value.strip()
-            if key and key not in os.environ:
-                os.environ[key] = value
+    load_env()
 
 
 _load_dotenv()
@@ -136,6 +108,11 @@ class ToolResult:
     duration_seconds: float = 0.0
     seed: Optional[int] = None
     model: Optional[str] = None
+    # Unknown failure is not proof of zero billing. Providers may explicitly
+    # report estimated/settled cost or prove that dispatch never occurred.
+    cost_status: str = "unknown"
+    cost_entry_id: Optional[str] = None
+    provider_request_id: Optional[str] = None
 
 
 import threading as _threading
@@ -224,15 +201,31 @@ def _instrument_execute(fn: Callable) -> Callable:
     return wrapper
 
 
+def _govern_execute(fn: Callable) -> Callable:
+    if getattr(fn, "_budget_governed", False):
+        return fn
+
+    @functools.wraps(fn)
+    def wrapper(self, inputs: Any, *args: Any, **kwargs: Any):
+        # Keep this outside optional event instrumentation: observer imports and
+        # writes must never bypass the mandatory spending boundary.
+        from lib.budget import governed_execute
+
+        return governed_execute(self, inputs, fn, *args, **kwargs)
+
+    wrapper._budget_governed = True
+    return wrapper
+
+
 class BaseTool(ABC):
     """Abstract base class for all OpenMontage tools."""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
-        """Auto-instrument every concrete execute() with Backlot events."""
+        """Govern every concrete execute(), independently of optional events."""
         super().__init_subclass__(**kwargs)
         impl = cls.__dict__.get("execute")
         if impl is not None and not getattr(impl, "__isabstractmethod__", False):
-            cls.execute = _instrument_execute(impl)
+            cls.execute = _govern_execute(_instrument_execute(impl))
 
     # --- Identity (override in subclasses) ---
     name: str = ""
@@ -242,6 +235,9 @@ class BaseTool(ABC):
     execution_mode: ExecutionMode = ExecutionMode.SYNC
     determinism: Determinism = Determinism.DETERMINISTIC
     runtime: ToolRuntime = ToolRuntime.LOCAL
+    # Only selectors whose paid work always calls other wrapped BaseTools may
+    # opt in. A direct paid HYBRID implementation must not set this.
+    delegates_paid_execution: bool = False
 
     # --- Dependencies ---
     # For API tools, add "env:ENVVAR_NAME" to signal required API keys
@@ -372,6 +368,22 @@ class BaseTool(ABC):
         }
 
     # ---- Cost estimation ----
+
+    def normalize_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Resolve provider-native defaults/aliases without side effects.
+
+        Concrete adapters should override when estimation and dispatch need
+        normalization. Selectors adapt provider inputs before this boundary.
+        """
+        return dict(inputs)
+
+    def validate_paid_recovery(self, inputs: dict[str, Any]) -> None:
+        """Prove this call can only recover an already-submitted durable job.
+
+        Journal-aware adapters may override with read-only project/request/job
+        validation. A recovery ID alone is not proof and must never allow POST.
+        """
+        raise ValueError(f"{self.name} has not implemented verified paid recovery")
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         """Estimate cost in USD for the given inputs. Override for paid tools."""

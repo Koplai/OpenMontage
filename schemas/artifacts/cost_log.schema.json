@@ -6,7 +6,32 @@
   "type": "object",
   "required": ["version", "entries"],
   "properties": {
-    "version": { "type": "string", "const": "1.0" },
+    "version": { "type": "string", "enum": ["1.0", "2.0"] },
+    "policy": {
+      "type": "object",
+      "required": ["mode", "total_usd", "reserve_pct", "single_action_approval_usd", "require_approval_for_new_paid_tool"],
+      "properties": {
+        "mode": { "enum": ["observe", "warn", "cap"] },
+        "total_usd": { "type": "number", "minimum": 0 },
+        "reserve_pct": { "type": "number", "minimum": 0, "maximum": 1 },
+        "single_action_approval_usd": { "type": "number", "minimum": 0 },
+        "require_approval_for_new_paid_tool": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "required": ["directory", "project_id", "pipeline_type"],
+      "properties": {
+        "directory": { "type": "string", "minLength": 1 },
+        "project_id": { "type": "string", "minLength": 1 },
+        "pipeline_type": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "approved_tools": {
+      "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 }
+    },
     "budget_total_usd": { "type": "number", "minimum": 0 },
     "budget_reserved_usd": { "type": "number", "minimum": 0 },
     "budget_spent_usd": { "type": "number", "minimum": 0 },
@@ -19,17 +44,42 @@
           "id": { "type": "string" },
           "tool": { "type": "string" },
           "operation": { "type": "string" },
-          "status": { "type": "string", "enum": ["estimated", "reserved", "completed", "failed", "refunded"] },
+          "status": { "type": "string", "enum": ["estimated", "reserved", "executing", "unknown", "completed", "failed", "refunded"] },
           "estimated_usd": { "type": "number", "minimum": 0 },
           "reserved_usd": { "type": "number", "minimum": 0 },
           "actual_usd": { "type": "number", "minimum": 0 },
           "timestamp": { "type": "string", "format": "date-time" },
-          "details": { "type": "string" }
+          "details": { "type": "string" },
+          "request_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "provider_request_id": { "type": "string", "minLength": 1 },
+          "budget_warning": { "type": "boolean" },
+          "budget_warning_message": { "type": "string" },
+          "approval": {
+            "type": "object",
+            "required": ["amount_usd", "approved_by", "timestamp"],
+            "properties": {
+              "amount_usd": { "type": "number", "minimum": 0 },
+              "approved_by": { "type": "string", "minLength": 1 },
+              "timestamp": { "type": "string", "format": "date-time" }
+            },
+            "additionalProperties": false
+          }
         },
         "additionalProperties": false
       }
     },
     "metadata": { "type": "object" }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [{
+    "if": { "properties": { "version": { "const": "2.0" } } },
+    "then": {
+      "required": ["policy", "approved_tools", "budget_total_usd", "budget_reserved_usd", "budget_spent_usd"],
+      "properties": {
+        "entries": {
+          "items": { "required": ["estimated_usd", "reserved_usd", "actual_usd"] }
+        }
+      }
+    }
+  }]
 }

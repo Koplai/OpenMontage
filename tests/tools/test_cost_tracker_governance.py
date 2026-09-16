@@ -39,6 +39,10 @@ class CostTrackerGovernanceTests(unittest.TestCase):
                 self.assertIn("exceeds usable budget", entry["budget_warning_message"])
                 persisted = json.loads(log_path.read_text())
                 self.assertTrue(persisted["entries"][0]["budget_warning"])
+                import jsonschema
+
+                schema = json.loads((ROOT / "schemas/artifacts/cost_log.schema.json").read_text())
+                jsonschema.Draft202012Validator(schema).validate(persisted)
 
     def test_approved_tools_persist_across_tracker_restarts(self) -> None:
         import tempfile

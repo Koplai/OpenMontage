@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BudgetMode(str, Enum):
@@ -33,10 +33,12 @@ class LLMConfig(BaseModel):
 
 
 class BudgetConfig(BaseModel):
-    mode: BudgetMode = BudgetMode.WARN
-    total_usd: float = 10.0
-    reserve_pct: float = 0.10
-    single_action_approval_usd: float = 0.50
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mode: BudgetMode = BudgetMode.CAP
+    total_usd: float = Field(default=10.0, ge=0, allow_inf_nan=False, strict=True)
+    reserve_pct: float = Field(default=0.10, ge=0, le=1, allow_inf_nan=False, strict=True)
+    single_action_approval_usd: float = Field(default=0.50, ge=0, allow_inf_nan=False, strict=True)
     require_approval_for_new_paid_tool: bool = True
 
 
