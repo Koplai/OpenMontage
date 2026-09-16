@@ -475,7 +475,9 @@ def test_normalized_native_request_is_estimated_approved_and_executed(project):
 
     tool = Native()
     request = prepare_paid_call(project, tool, {"count": 2})
-    assert request.inputs == {"amount": 2, "model": "explicit-default"}
+    assert request.inputs == {
+        "amount": 2, "model": "explicit-default", "project_dir": str(project.resolve()),
+    }
     assert request.estimated_usd == 2
     approve_paid_call(request, approved_usd=2, approved_by="operator")
     with paid_execution(project):
@@ -551,7 +553,9 @@ def test_real_openai_adapter_governance_with_fake_submission(project, monkeypatc
     if delivery_failure:
         monkeypatch.setattr(ProviderJob, "deliver", Mock(side_effect=OSError("disk full")))
     tool = OpenAIImage()
-    inputs = {"project_dir": str(project), "output_path": str(project / "image.png"), "prompt": "test"}
+    # The context/approval project must reach the real provider journal without
+    # requiring duplicate project_dir metadata in the caller's input dictionary.
+    inputs = {"output_path": str(project / "image.png"), "prompt": "test"}
     authorize(project, tool, inputs)
     with paid_execution(project):
         result = tool.execute(inputs)
@@ -750,3 +754,39 @@ def test_conflicting_remote_identity_metadata_does_not_release_hold(project):
     with paid_execution(project), pytest.raises(ValueError):
         tool.execute({})
     assert CostTracker(cost_log_path=project / "cost_log.json").budget_reserved_usd == .2
+
+
+def test_project_context_is_injected_before_normalization_and_estimation(project):
+    from lib.budget import approve_paid_call, paid_execution, prepare_paid_call
+
+    class ProjectAware(FakePaid):
+        def normalize_inputs(self, inputs):
+            assert inputs["project_dir"] == str(project.resolve())
+            return dict(inputs)
+
+        def estimate_cost(self, inputs):
+            assert inputs["project_dir"] == str(project.resolve())
+            return .2
+
+    tool = ProjectAware()
+    request = prepare_paid_call(project, tool, {"prompt": "test"})
+    assert request.inputs["project_dir"] == str(project.resolve())
+    approve_paid_call(request, approved_usd=.2, approved_by="operator")
+    with paid_execution(project):
+        tool.execute({"prompt": "test"})
+    tool.submit.assert_called_once_with(request.inputs)
+
+
+def test_conflicting_explicit_project_is_not_silently_overwritten(project, tmp_path):
+    from lib.budget import paid_execution
+    tool = FakePaid()
+    authorize(project, tool, {})
+    with paid_execution(project), pytest.raises(ApprovalRequiredError):
+        tool.execute({"project_dir": str(tmp_path / "different-project")})
+    tool.submit.assert_not_called()
+
+
+def test_submission_hook_rejects_unscoped_use():
+    from lib.budget import record_paid_submission
+    with pytest.raises(ApprovalRequiredError):
+        record_paid_submission("accepted-without-governance")

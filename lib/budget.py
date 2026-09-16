@@ -85,8 +85,14 @@ def _is_delegate(tool: Any) -> bool:
     return tool.delegates_paid_execution or type(tool).__module__ in _LEGACY_DELEGATES
 
 
-def _normalized_inputs(tool: Any, inputs: dict) -> dict:
-    normalized = tool.normalize_inputs(copy.deepcopy(inputs))
+def _normalized_inputs(tool: Any, inputs: dict, project_dir: Path | None = None) -> dict:
+    scoped_inputs = copy.deepcopy(inputs)
+    if project_dir is not None:
+        # Providers must receive the same initialized workspace during quote and
+        # dispatch. Preserve explicit values so mismatches fail scope validation
+        # rather than silently replacing a caller's different project.
+        scoped_inputs.setdefault("project_dir", str(project_dir))
+    normalized = tool.normalize_inputs(scoped_inputs)
     if not isinstance(normalized, dict):
         raise ValueError("normalize_inputs must return a resolved input dictionary")
     return normalized
@@ -170,11 +176,12 @@ def prepare_paid_call(project_dir: Path | str, tool: Any, inputs: dict[str, Any]
         raise ValueError("Paid tool inputs must be a dictionary")
     if "recovery_id" in inputs:
         raise ApprovalRequiredError("Recovery must reuse its original cost entry, not receive a new approval")
-    inputs = _normalized_inputs(tool, inputs)
+    root = Path(project_dir).expanduser().resolve(strict=True)
+    inputs = _normalized_inputs(tool, inputs, root)
     paid, amount = _quote(tool, inputs)
     if not paid:
         raise ValueError("Prepare the concrete paid provider request, not a free tool or selector")
-    tracker = _project_tracker(project_dir)
+    tracker = _project_tracker(root)
     root = tracker.cost_log_path.parent
     _check_scope(inputs, root)
     fingerprint = _request_hash(tool, inputs, root)
@@ -216,11 +223,11 @@ def governed_execute(
     runtime = getattr(tool.runtime, "value", tool.runtime)
     if runtime in ("local", "local_gpu") or _is_delegate(tool):
         return execute(tool, inputs, *args, **kwargs)
-    inputs = _normalized_inputs(tool, inputs)
+    root = _PROJECT.get()
+    inputs = _normalized_inputs(tool, inputs, root)
     paid, amount = _quote(tool, inputs)
     if not paid:
         return execute(tool, inputs, *args, **kwargs)
-    root = _PROJECT.get()
     if root is None:
         raise ApprovalRequiredError("Unscoped paid call rejected; use paid_execution(project_dir) after exact approval")
     if args or kwargs:

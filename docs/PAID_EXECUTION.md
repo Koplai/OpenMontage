@@ -208,7 +208,12 @@ trusted. Arbitrary SDK calls outside BaseTool are not sandboxed. Protect the
 project filesystem and do not expose this API as a public approval endpoint.
 
 Thread/task contexts are isolated; new worker threads must explicitly enter
-`paid_execution(project_dir)`. Approval claims and ledger changes serialize
+`paid_execution(project_dir)`. Preparation and scoped remote execution inject
+the canonical `project_dir` into inputs when absent, before normalization,
+estimation, hashing, and dispatch. An explicit conflicting project is rejected,
+not silently replaced. Providers can therefore use their journal without
+requiring the caller to duplicate the context in every input dictionary.
+Approval claims and ledger changes serialize
 across processes; provider work runs outside the lock. Retain backups. A
 crash after replacement but before acknowledgement may leave a committed hold;
 reloading, not retrying generation, is the safe response.
