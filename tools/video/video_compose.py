@@ -2914,6 +2914,8 @@ class VideoCompose(BaseTool):
         if not subtitle_path.exists():
             return ToolResult(success=False, error=f"Subtitle file not found: {subtitle_path}")
 
+        self._require_subtitle_renderer(inputs)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         style = inputs.get("subtitle_style", {})
         ass_style = self._build_subtitle_style(style)
         codec = inputs.get("codec", "libx264")
@@ -2934,6 +2936,7 @@ class VideoCompose(BaseTool):
             data={
                 "operation": "burn_subtitles",
                 "output": str(output_path),
+                "has_subtitles": True,
             },
             artifacts=[str(output_path)],
         )

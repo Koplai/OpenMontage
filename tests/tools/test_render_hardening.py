@@ -484,7 +484,8 @@ def test_short_source_cannot_be_accepted_as_long_timeline(media, tmp_path):
     assert not (tmp_path / "out.mp4").exists()
 
 
-def test_subtitles_are_burned_or_block_before_visual_render(media, tmp_path, monkeypatch):
+@pytest.mark.parametrize("operation", ["compose", "burn_subtitles"])
+def test_subtitles_are_burned_or_block_before_visual_render(media, tmp_path, monkeypatch, operation):
     source, _ = media
     subtitle = tmp_path / "quote's captions.srt"
     subtitle.write_text("1\n00:00:00,000 --> 00:00:03,000\nSynthetic subtitle\n")
@@ -494,7 +495,8 @@ def test_subtitles_are_burned_or_block_before_visual_render(media, tmp_path, mon
         monkeypatch.setattr(tool, "run_command", lambda *a, **k: pytest.fail("render started without libass"))
     output = tmp_path / "captioned.mp4"
     result = tool.execute({
-        "operation": "compose", "edit_decisions": edit([cut(source)]),
+        "operation": operation, "edit_decisions": edit([cut(source)]),
+        "input_path": str(source),
         "subtitle_path": str(subtitle), "output_path": str(output),
     })
     if " subtitles " in filters:
