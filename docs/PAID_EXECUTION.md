@@ -125,7 +125,9 @@ free: the reservation remains outstanding unless explicitly reported.
 Immediately after acceptance, adapters may call
 `lib.budget.record_paid_submission(provider_request_id)` before polling or
 delivery. This requires an active governed call and records the ID durably.
-The ID cannot later be replaced by a different job. A process crash or delivery
+Repeating the same accepted ID is idempotent, including during verified recovery
+of already-reconciled spend. The ID cannot later be replaced by a different job,
+and an unscoped hook call remains an error. A process crash or delivery
 failure must not trigger a fresh submission automatically.
 
 ## Failure accounting and reconciliation

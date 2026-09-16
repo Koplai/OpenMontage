@@ -790,3 +790,32 @@ def test_submission_hook_rejects_unscoped_use():
     from lib.budget import record_paid_submission
     with pytest.raises(ApprovalRequiredError):
         record_paid_submission("accepted-without-governance")
+
+
+@pytest.mark.parametrize("success", [False, True])
+def test_submission_hook_is_idempotent_during_settled_recovery(project, success):
+    from lib.budget import paid_execution, record_paid_submission
+
+    class Recoverable(FakePaid):
+        def validate_paid_recovery(self, inputs):
+            assert inputs["recovery_id"] == "existing-job"
+
+    tool = Recoverable()
+
+    def submitted(inputs):
+        record_paid_submission("remote-123")
+        return ToolResult(success=success, cost_usd=.2, cost_status="reported")
+
+    tool.submit.side_effect = submitted
+    request = authorize(project, tool, {})
+    with paid_execution(project):
+        tool.execute({})
+    with paid_execution(project, resume_entry_id=request.entry_id):
+        tool.execute({"recovery_id": "existing-job"})
+    ledger = CostTracker(cost_log_path=project / "cost_log.json")
+    assert ledger.budget_spent_usd == .2
+    assert ledger.budget_reserved_usd == 0
+    assert len(ledger.entries) == 1
+    assert ledger.entries[0]["provider_request_id"] == "remote-123"
+    with pytest.raises(ValueError):
+        ledger.record_submission(request.entry_id, "different-job")

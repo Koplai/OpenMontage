@@ -358,8 +358,15 @@ class CostTracker:
             raise ValueError("provider_request_id must be nonempty")
         with self._transaction():
             entry = self._find(entry_id)
-            self._require_status(entry, EntryStatus.EXECUTING, EntryStatus.UNKNOWN)
             previous = entry.get("provider_request_id")
+            if (
+                entry["status"] in (EntryStatus.COMPLETED.value, EntryStatus.FAILED.value)
+                and previous == provider_request_id
+            ):
+                # A verified delivery recovery may repeat the accepted identity.
+                # It must not reopen or modify already reconciled spending.
+                return
+            self._require_status(entry, EntryStatus.EXECUTING, EntryStatus.UNKNOWN)
             if previous is not None and previous != provider_request_id:
                 raise ValueError("A reservation cannot be reassigned to a different remote job")
             entry["provider_request_id"] = provider_request_id
