@@ -419,6 +419,9 @@ class SeedanceArkVideo(BaseTool):
         cny_per_usd = self._get_cny_per_usd()
         return round(self.estimate_cost_cny(inputs) / cny_per_usd, 4)
 
+    def is_non_billable_operation(self, inputs: dict[str, Any]) -> bool:
+        return str(inputs.get("task_action", "generate")) in {"query", "cancel"}
+
     @staticmethod
     def _get_custom_price(inputs: dict[str, Any], *, required: bool) -> float:
         try:

@@ -82,6 +82,18 @@ their remote content cannot be frozen by this local ledger.
 
 ## Selector and provider contracts
 
+Paid artifact-producing capabilities require an explicit output destination
+inside the project before a request can be prepared. A provider's default
+filename in the current directory is not a safe production destination.
+Data-only operations do not need a file destination.
+
+Providers may explicitly implement `is_non_billable_operation(inputs)` for a
+purely identified read/control branch that cannot submit new paid work.
+Seedance Ark's existing `query` and `cancel` actions use this contract; callers
+cannot exempt generation by adding a generic input flag. Queries may report an
+earlier task's usage in their result, but create no new cost entry and emit zero
+incremental event cost. Never classify an unknown-cost generation as nonbillable.
+
 Selectors do not get blanket approval. A selector may declare
 `delegates_paid_execution = True` only if **every** paid side effect calls a
 wrapped concrete `BaseTool.execute()`. Its provider-native request must match
@@ -241,3 +253,10 @@ Keep their network transports mocked too. This isolates provider behavior; it
 does **not** prove governance. Never install this mock as a global test fixture,
 and never add environment/pytest detection to production code to bypass the gate.
 Dedicated integration tests must continue to exercise the real boundary.
+
+The test suite also offers the explicit `isolated_provider_unit` fixture for
+transport-only modules. It is not autouse: modules opt in by name, while real
+budget/recovery/reference-binding and network-guard tests retain the gate.
+The fixture independently blocks outbound sockets even if the live-network
+flag is set, and refuses live-API tests. It is test isolation, not a runtime
+environment flag or authorization bypass.

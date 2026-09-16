@@ -43,6 +43,10 @@ _LEGACY_DELEGATES = frozenset({
     "tools.capture.screen_capture_selector",
 })
 _FREE_API_PROVIDERS = frozenset({"pexels", "pixabay", "pixabay_music", "freesound"})
+_ARTIFACT_CAPABILITIES = frozenset({
+    "image_generation", "video_generation", "tts", "music_generation",
+    "avatar", "3d_asset_generation", "enhancement", "audio_processing",
+})
 
 
 def _project_tracker(project_dir: Path | str) -> CostTracker:
@@ -99,7 +103,7 @@ def _normalized_inputs(tool: Any, inputs: dict, project_dir: Path | None = None)
 
 
 def _quote(tool: Any, inputs: dict) -> tuple[bool, float]:
-    if _is_delegate(tool):
+    if _is_delegate(tool) or tool.is_non_billable_operation(inputs) is True:
         return False, 0.0
     runtime = getattr(tool.runtime, "value", tool.runtime)
     if runtime in ("local", "local_gpu"):
@@ -125,6 +129,8 @@ def _json_value(value: Any) -> Any:
 
 
 def _request_hash(tool: Any, inputs: dict, root: Path) -> str:
+    from lib.provider_jobs import local_media_digest
+
     # Bind local input-file contents as well as their names. A replacement image
     # or transcript is a different request. Output files may legitimately change.
     files: dict[str, str] = {}
@@ -138,13 +144,10 @@ def _request_hash(tool: Any, inputs: dict, root: Path) -> str:
         elif isinstance(value, (list, tuple)):
             for child in value:
                 visit(child, key)
-        elif isinstance(value, (str, Path)) and (
-            isinstance(value, Path) or key.endswith(("_path", "_paths", "_file", "_files"))
-        ):
-            path = Path(value).expanduser()
-            if path.is_file():
-                with path.open("rb") as stream:
-                    files[str(path.resolve())] = hashlib.file_digest(stream, "sha256").hexdigest()
+        else:
+            digest = local_media_digest(key, value)
+            if digest is not None:
+                files[str(Path(value).expanduser().resolve())] = digest
 
     visit(inputs)
     payload = {
@@ -156,11 +159,15 @@ def _request_hash(tool: Any, inputs: dict, root: Path) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _check_scope(inputs: dict, root: Path) -> None:
+def _check_scope(inputs: dict, root: Path, tool: Any) -> None:
     for key in ("project_dir", "project_path"):
         if inputs.get(key) is not None and Path(inputs[key]).expanduser().resolve() != root:
             raise ApprovalRequiredError(f"{key} conflicts with the paid execution project")
     # Write destinations must belong to this project, not merely look like one.
+    if tool.capability in _ARTIFACT_CAPABILITIES and not any(
+        inputs.get(key) for key in ("output_path", "output_dir", "output_file")
+    ):
+        raise ApprovalRequiredError("Paid artifact generation requires an explicit project-scoped output destination")
     for key in ("output_path", "output_dir", "output_file"):
         if inputs.get(key) is not None and not Path(inputs[key]).expanduser().resolve().is_relative_to(root):
             raise ApprovalRequiredError(f"{key} must be inside the paid execution project")
@@ -183,7 +190,7 @@ def prepare_paid_call(project_dir: Path | str, tool: Any, inputs: dict[str, Any]
         raise ValueError("Prepare the concrete paid provider request, not a free tool or selector")
     tracker = _project_tracker(root)
     root = tracker.cost_log_path.parent
-    _check_scope(inputs, root)
+    _check_scope(inputs, root, tool)
     fingerprint = _request_hash(tool, inputs, root)
     entry_id = tracker.estimate(tool.name, str(inputs.get("operation", "execute")), amount, request_hash=fingerprint)
     return PreparedPaidCall(root, entry_id, tool.name, fingerprint, amount, copy.deepcopy(inputs))
@@ -232,7 +239,7 @@ def governed_execute(
         raise ApprovalRequiredError("Unscoped paid call rejected; use paid_execution(project_dir) after exact approval")
     if args or kwargs:
         raise ApprovalRequiredError("All paid request parameters must be in the approved input dictionary")
-    _check_scope(inputs, root)
+    _check_scope(inputs, root, tool)
     tracker = _project_tracker(root)
     resume_entry_id = _RESUME.get()
     if resume_entry_id is not None:

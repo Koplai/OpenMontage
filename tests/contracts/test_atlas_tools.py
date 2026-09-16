@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
+
 from tools import atlas_client
 from tools.atlas_models import IMAGE_MODELS, VIDEO_MODELS
 from tools.base_tool import BaseTool, ExecutionMode, ToolRuntime, ToolStability, ToolStatus, ToolTier

@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
 import requests
 
 from tools.base_tool import ToolStatus

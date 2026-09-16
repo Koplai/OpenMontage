@@ -71,7 +71,13 @@ Its files live in `<project_dir>/.provider_jobs/`:
 The journal does **not** contain prompts, request bodies, API keys, approval
 tokens, signed media URLs, or raw exception/HTTP response bodies. Request
 fingerprints hash content, including local reference-file bytes; credential
-fields are excluded. fal status/result paths are persisted only after checking
+fields are excluded. Native local aliases such as `image`, `image_url`, `images`,
+`reference_image` and nested `image_list[].image_url` bind the same bytes as
+explicit `*_path(s)` fields. `local_media_digest(key, value)` is the shared
+approval/recovery primitive: list traversal preserves its original field name,
+HTTP(S)/data references never trigger filesystem probes, and prompt/text values
+are never treated as local files. Only digests enter the durable identity.
+fal status/result paths are persisted only after checking
 the fixed HTTPS queue host, expected request ID and absence of query credentials.
 Signed media URLs are fetched from the provider response again, not journaled.
 

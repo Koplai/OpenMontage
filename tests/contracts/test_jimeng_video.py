@@ -8,6 +8,8 @@ Run: pytest tests/contracts/test_jimeng_video.py -v
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
+
 from tools.base_tool import (
     BaseTool,
     Determinism,

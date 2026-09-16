@@ -30,10 +30,12 @@ from __future__ import annotations
 
 import os
 import socket
+import ipaddress
 
 import pytest
 
 _ALLOW_ENV_FLAG = "OPENMONTAGE_ALLOW_NETWORK"
+_PROXY_ENV_KEYS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0", ""}
 
@@ -64,7 +66,10 @@ def _is_loopback(address) -> bool:
     host = host.strip("[]").lower()
     if host in _LOOPBACK_HOSTS:
         return True
-    return host.startswith("127.")
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _blocked(address) -> NetworkCallInTestError:
@@ -84,6 +89,9 @@ def _block_network():
     if _network_allowed():
         yield
         return
+    environment = pytest.MonkeyPatch()
+    for key in _PROXY_ENV_KEYS:
+        environment.delenv(key, raising=False)
 
     def guarded_connect(self, address, *args, **kwargs):
         if not _is_loopback(address):
@@ -109,6 +117,7 @@ def _block_network():
         socket.socket.connect = _real_connect
         socket.socket.connect_ex = _real_connect_ex
         socket.create_connection = _real_create_connection
+        environment.undo()
 
 
 def pytest_configure(config):
@@ -129,3 +138,36 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "live_api" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture
+def isolated_provider_unit(monkeypatch, request):
+    """Opt-in transport-only tests, not approval tests. Network remains blocked."""
+    if "live_api" in request.node.keywords:
+        raise pytest.UsageError("Live API tests must exercise the real paid execution boundary")
+    for key in _PROXY_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    def guarded_connect(self, address, *args, **kwargs):
+        if not _is_loopback(address):
+            raise _blocked(address)
+        return _real_connect(self, address, *args, **kwargs)
+
+    def guarded_connect_ex(self, address, *args, **kwargs):
+        if not _is_loopback(address):
+            raise _blocked(address)
+        return _real_connect_ex(self, address, *args, **kwargs)
+
+    def guarded_create_connection(address, *args, **kwargs):
+        if not _is_loopback(address):
+            raise _blocked(address)
+        return _real_create_connection(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
+    monkeypatch.setattr(socket, "create_connection", guarded_create_connection)
+    monkeypatch.setattr(
+        "lib.budget.governed_execute",
+        lambda tool, inputs, execute, *args, **kwargs: execute(tool, inputs, *args, **kwargs),
+    )
+    monkeypatch.setattr("lib.budget.record_paid_submission", lambda job_id: None)

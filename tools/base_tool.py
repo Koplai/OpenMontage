@@ -189,6 +189,8 @@ def _instrument_execute(fn: Callable) -> Callable:
             project_dir = infer_project_dir(inputs)
         if project_dir is not None:
             cost = getattr(result, "cost_usd", None)
+            if isinstance(inputs, dict) and self.is_non_billable_operation(inputs) is True:
+                cost = 0.0  # A status response may report earlier job usage, not a new charge.
             emit_event(project_dir, {
                 **base, "event": "finish",
                 "output_path": str(output_path) if output_path else None,
@@ -395,6 +397,10 @@ class BaseTool(ABC):
         """Estimate runtime in seconds. Override for long-running tools."""
         return 0.0
 
+    def is_non_billable_operation(self, inputs: dict[str, Any]) -> bool:
+        """Declare a provider control/read path that cannot submit paid work."""
+        return False
+
     # ---- Idempotency ----
 
     def idempotency_key(self, inputs: dict[str, Any]) -> str:
@@ -411,13 +417,23 @@ class BaseTool(ABC):
         ...
 
     def dry_run(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Preflight check without side effects. Override for paid/publishing tools."""
+        """Estimate readiness without dispatching; unresolved estimates stay unknown."""
+        try:
+            cost = self.estimate_cost(inputs)
+            runtime = self.estimate_runtime(inputs)
+        except ValueError as exc:
+            return {
+                "tool": self.name, "estimated_cost_usd": None,
+                "estimated_runtime_seconds": None, "status": ToolStatus.UNAVAILABLE.value,
+                "would_execute": False, "estimate_error": str(exc),
+            }
+        status = self.get_status()
         return {
             "tool": self.name,
-            "estimated_cost_usd": self.estimate_cost(inputs),
-            "estimated_runtime_seconds": self.estimate_runtime(inputs),
-            "status": self.get_status().value,
-            "would_execute": True,
+            "estimated_cost_usd": cost,
+            "estimated_runtime_seconds": runtime,
+            "status": status.value,
+            "would_execute": status == ToolStatus.AVAILABLE,
         }
 
     # ---- CLI helper ----

@@ -13,7 +13,7 @@ def test_video_scene_honors_hard_cut_tokens_and_backing_color() -> None:
     assert '["cut", "none"].includes((transitionOut || "").toLowerCase())' in source
     assert "transitionIn={cut.transition_in}" in source
     assert "transitionOut={cut.transition_out}" in source
-    assert "sceneDurationSeconds={cut.out_seconds - cut.in_seconds}" in source
+    assert "sceneDurationSeconds={cut.timeline_duration_seconds ??" in source
     assert "Math.round(sceneDurationSeconds * fps)" in source
     assert "durationInFrames - transitionFrames" in source
     assert "backgroundColor={cut.backgroundColor}" in source

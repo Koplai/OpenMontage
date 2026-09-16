@@ -10,6 +10,8 @@ import wave
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
+
 from tools.base_tool import BaseTool, ToolRuntime, ToolStatus
 from tools.video.seedance_ark import SeedanceArkVideo
 

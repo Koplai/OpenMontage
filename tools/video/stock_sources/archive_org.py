@@ -27,14 +27,14 @@ expected to probe the clip with ffprobe post-download.
 
 Licence
 -------
-Prelinger collection items are public domain. Broader
-`opensource_movies` items are usually CC0 or CC-BY. We record the
-collection and `licenseurl` (when present) so the agent can attribute
-correctly if it wants to, but no attribution is legally required.
+Collection membership is not legal clearance. We record the collection and
+`licenseurl` where present; follow each item's actual terms. CC-BY material
+requires attribution, and missing license metadata requires review.
 """
 from __future__ import annotations
 
 import re
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
@@ -44,6 +44,7 @@ from .base import Candidate, SearchFilters
 _SEARCH_URL = "https://archive.org/advancedsearch.php"
 _METADATA_URL = "https://archive.org/metadata"
 _DOWNLOAD_URL = "https://archive.org/download"
+_LOGGER = logging.getLogger(__name__)
 
 # Default collections to bias toward. Overridable via SearchFilters.extra
 # in a future refinement; for now these are baked in because they give
@@ -157,14 +158,9 @@ class ArchiveOrgSource:
                 ("output", "json"),
             ]
 
-            try:
-                r = requests.get(_SEARCH_URL, params=params, timeout=30)
-                r.raise_for_status()
-                data = r.json()
-            except Exception:
-                # One strategy's network/parse error shouldn't kill the
-                # whole cascade — try the next one.
-                continue
+            r = requests.get(_SEARCH_URL, params=params, timeout=30)
+            r.raise_for_status()
+            data = r.json()
             docs = (data.get("response") or {}).get("docs", []) or []
             if not docs:
                 continue
@@ -326,11 +322,12 @@ class ArchiveOrgSource:
             r = requests.get(f"{_METADATA_URL}/{identifier}", timeout=30)
             r.raise_for_status()
             meta = r.json()
-        except Exception:
+        except Exception as exc:
             # Swallow per-item fetch failures — one bad item shouldn't
             # poison the whole search. Alternative would be to raise and
             # have corpus_builder catch per-source, but at this layer we
             # can keep going.
+            _LOGGER.warning("Archive metadata unavailable for %s (%s)", identifier, type(exc).__name__)
             return None
 
         files = meta.get("files") or []

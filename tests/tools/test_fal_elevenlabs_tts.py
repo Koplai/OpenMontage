@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
+
 from unittest.mock import MagicMock, patch
 
 from tools.audio.fal_elevenlabs_tts import FalElevenLabsTTS

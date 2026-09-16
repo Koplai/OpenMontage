@@ -7,6 +7,8 @@ available to the rest of the test suite.
 from __future__ import annotations
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
 import requests
 
 from tools.base_tool import ToolStatus
@@ -389,7 +391,8 @@ def test_minimax_hailuo_image_to_video_prompt_is_optional(monkeypatch, tmp_path)
     }
 
 
-def test_video_selector_routes_reference_image_to_minimax_h3(monkeypatch, tmp_path):
+@pytest.mark.parametrize("reference_kind", ["path", "url"])
+def test_video_selector_requires_explicit_url_for_url_only_minimax(monkeypatch, tmp_path, reference_kind):
     from tools.video import _shared
     from tools.video.minimax_video import MiniMaxVideo
     from tools.video.video_selector import VideoSelector
@@ -399,7 +402,7 @@ def test_video_selector_routes_reference_image_to_minimax_h3(monkeypatch, tmp_pa
     monkeypatch.setattr(
         _shared,
         "upload_image_fal",
-        lambda _path: "https://cdn.example/reference.png",
+        lambda _path: pytest.fail("Selection must not upload to an unapproved provider"),
     )
     calls = {}
 
@@ -428,11 +431,20 @@ def test_video_selector_routes_reference_image_to_minimax_h3(monkeypatch, tmp_pa
         {
             "prompt": "A calm product shot",
             "operation": "image_to_video",
-            "reference_image_path": str(tmp_path / "reference.png"),
+            **(
+                {"reference_image_path": str(tmp_path / "reference.png")}
+                if reference_kind == "path"
+                else {"reference_image_url": "https://cdn.example/reference.png"}
+            ),
             "output_path": str(tmp_path / "selector.mp4"),
         }
     )
 
+    if reference_kind == "path":
+        assert not result.success
+        assert "does not support reference_image_path" in result.error
+        assert calls == {}
+        return
     assert result.success, result.error
     first_frame = calls["payload"]["content"][1]
     assert first_frame == {

@@ -13,6 +13,7 @@ from zipfile import BadZipFile, ZipFile, ZIP_DEFLATED
 
 DEFAULT_MAX_BYTES = 20 * 1024**3
 MAX_FILES = 100_000
+MAX_MANIFEST_BYTES = 8 * 1024**2
 
 
 def _safe_relative(name: str) -> Path:
@@ -89,7 +90,9 @@ def _backup_project(project: Path, destination: Path, *, max_bytes: int) -> Path
                 _safe_relative(relative.as_posix())
                 if len(manifest["files"]) >= MAX_FILES:
                     raise ValueError("Too many files in backup")
-                with path.open("rb") as source, output.open(f"files/{relative.as_posix()}", "w") as target:
+                with path.open("rb") as source, output.open(
+                    f"files/{relative.as_posix()}", "w", force_zip64=True
+                ) as target:
                     digest, size = _copy_hash(source, target, max_bytes - total)
                 total += size
                 attributes = path.stat()
@@ -98,7 +101,10 @@ def _backup_project(project: Path, destination: Path, *, max_bytes: int) -> Path
                     "mode": stat.S_IMODE(attributes.st_mode) & 0o777,
                     "mtime_ns": attributes.st_mtime_ns,
                 }
-            output.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
+            metadata = json.dumps(manifest, sort_keys=True).encode("utf-8")
+            if len(metadata) > MAX_MANIFEST_BYTES:
+                raise ValueError("Backup manifest is too large")
+            output.writestr("manifest.json", metadata)
         # A hard link is an atomic no-clobber publication, unlike replace().
         os.link(archive, destination)
     return destination
@@ -116,9 +122,9 @@ def restore_project(archive: Path, destination: Path, *, max_bytes: int = DEFAUL
         names = [entry.filename for entry in infos]
         if len(names) != len(set(names)) or len(names) > MAX_FILES + 1:
             raise ValueError("Duplicate entries or too many files in backup")
-        if source.getinfo("manifest.json").file_size > 8 * 1024**2:
+        if source.getinfo("manifest.json").file_size > MAX_MANIFEST_BYTES:
             raise ValueError("Backup manifest is too large")
-        if sum(entry.file_size for entry in infos) > max_bytes + 8 * 1024**2:
+        if sum(entry.file_size for entry in infos) > max_bytes + MAX_MANIFEST_BYTES:
             raise ValueError("Archive exceeds the configured byte limit")
         manifest = json.loads(source.read("manifest.json"))
         if not isinstance(manifest, dict):

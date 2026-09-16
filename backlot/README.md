@@ -23,7 +23,7 @@ notifications over SSE; the browser refetches board state. State sources:
 | script card / modal | `artifacts/script.json` |
 | filmstrip cards | `scene_plan × script × asset_manifest` join |
 | generating shimmer, activity | `events.jsonl` (written by `BaseTool` instrumentation) |
-| cost meter | checkpoint `cost_snapshot` |
+| cost meter | validated live `cost_log.json`; labeled checkpoint/manifest fallback only when no ledger exists |
 | renders | `renders/*.mp4` (+ root-level mp4 heuristic) |
 
 Projects without checkpoints degrade gracefully to a "what the watcher
@@ -41,6 +41,12 @@ field. Malformed fields are replaced with empty containers or `null`, and
 invalid object-array entries are omitted from the board projection. The
 artifact drawer displays that projection, not a byte-for-byte forensic copy.
 This is defensive display validation, not a replacement for production schemas.
+
+The cost meter reads the atomic version-2 ledger without mutating it. It shows
+settled spend separately from held/unsettled reservations and includes both in
+budget utilization. A corrupt, linked, or legacy ledger produces a diagnostic,
+not a reassuring stale zero from a checkpoint. Snapshot-only historical projects
+remain readable and are labeled by their cost source.
 
 The watcher retries when the projects root is absent or removed. SSE `hello`
 (including reconnect) and 15-second heartbeats trigger reconciliation as well

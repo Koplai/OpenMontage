@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
+
 import base64
 import sys
 from pathlib import Path

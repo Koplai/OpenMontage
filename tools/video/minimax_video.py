@@ -101,7 +101,11 @@ class MiniMaxVideo(BaseTool):
         "prompt-following with camera directions and high-texture footage",
         "direct first-party API access with global and mainland China routing",
     ]
-    not_good_for = ["offline generation", "clips longer than 15 seconds"]
+    not_good_for = [
+        "offline generation",
+        "clips longer than 15 seconds",
+        "implicit local-reference uploads; use an approved hosted URL or native data URI",
+    ]
     fallback_tools = ["kling_video", "veo_video", "wan_video"]
 
     input_schema = {

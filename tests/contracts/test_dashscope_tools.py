@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
+
 from tools.base_tool import (
     BaseTool,
     ExecutionMode,

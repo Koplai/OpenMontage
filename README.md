@@ -214,6 +214,11 @@ That's it. The agent researches your topic with live web search, generates AI im
 >
 > **Production setup:** use the supported source checkout, inject credentials through a trusted launcher/secret manager, and follow [production operations](docs/PRODUCTION.md). Setup does not create a credential file or silently install optional models. `make preflight` is a passive configuration inventory, not a live-provider verification.
 
+See [current hardening status and remaining qualification gates](docs/PRODUCTION_STATUS.md)
+before treating a setup as ready for unattended production. Local macOS/Linux
+is the qualified filesystem target for the new checkpoint/export contracts;
+Windows installation is not a production qualification.
+
 ### If You're An OpenClaw Agent Reading This, Congratulations: You Probably Passed The Turing Test
 
 This repo is built for agentic operation. If you're an OpenClaw-style agent, here is the shortest path to becoming useful fast:
@@ -684,7 +689,10 @@ Every major creative and technical choice — provider selection, style/playbook
 - **Per-action approval** — pause for confirmation above a threshold (default: $0.50)
 - **Total budget cap** — default $10, fully configurable
 
-No surprise bills. The agent tells you what it will cost before it spends.
+Paid execution requires approval of the resolved request before dispatch.
+Estimates are not invoice guarantees: uncertain charges remain reserved until
+reconciled, and provider-side spending limits remain important. See the
+[paid execution contract](docs/PAID_EXECUTION.md).
 
 ---
 

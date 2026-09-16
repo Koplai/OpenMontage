@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
+
 
 def test_blank_google_location_uses_documented_default(monkeypatch) -> None:
     monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "")

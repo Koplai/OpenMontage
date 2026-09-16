@@ -52,6 +52,33 @@ SCRIPT = {
 
 
 class TestBoardState:
+    def test_live_ledger_overrides_stale_checkpoint_cost(self, projects_root):
+        from tools.cost_tracker import BudgetMode, CostTracker
+
+        p = _make_project(projects_root, "ledger")
+        _write(p / "checkpoint_assets.json", {
+            "stage": "assets", "status": "in_progress",
+            "cost_snapshot": {"total_spent_usd": 0, "total_reserved_usd": 0, "budget_remaining_usd": 10},
+        })
+        tracker = CostTracker(cost_log_path=p / "cost_log.json", mode=BudgetMode.OBSERVE)
+        entry = tracker.estimate("fixture", "generate", 2)
+        tracker.reserve(entry)
+        state = load_board_state(p)
+        assert state["cost_source"] == "ledger"
+        assert state["cost"] == {"total_spent_usd": 0, "total_reserved_usd": 2, "budget_remaining_usd": 8}
+        tracker.reconcile(entry, 1.75)
+        assert load_board_state(p)["cost"]["total_spent_usd"] == 1.75
+
+    def test_invalid_ledger_does_not_fall_back_to_false_zero(self, projects_root):
+        p = _make_project(projects_root, "broken-ledger")
+        _write(p / "checkpoint_assets.json", {
+            "stage": "assets", "status": "in_progress", "cost_snapshot": {"total_spent_usd": 0},
+        })
+        _write(p / "cost_log.json", {"version": "2.0", "policy": {}})
+        state = load_board_state(p)
+        assert state["cost"] is None and state["cost_source"] == "unavailable"
+        assert any(item["scope"] == "cost_log.json" for item in state["diagnostics"])
+
     def test_full_project(self, projects_root):
         p = _make_project(projects_root, "film")
         _write(p / "project.json", {"project_id": "film", "title": "My Film",

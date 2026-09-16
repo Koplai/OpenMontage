@@ -96,6 +96,26 @@ def test_limits_are_enforced(project, tmp_path):
     assert not (tmp_path / "restored").exists()
 
 
+def test_streamed_assets_cross_zip64_threshold(project, tmp_path, monkeypatch):
+    import zipfile
+
+    monkeypatch.setattr(zipfile, "ZIP64_LIMIT", 256)
+    content = b"synthetic media" * 100
+    (project / "assets/large.bin").write_bytes(content)
+    archive = backup_project(project, tmp_path / "zip64.zip")
+    with ZipFile(archive) as source:
+        assert source.getinfo("files/assets/large.bin").extract_version >= 45
+    restored = restore_project(archive, tmp_path / "restored")
+    assert (restored / "assets/large.bin").read_bytes() == content
+
+
+def test_backup_never_publishes_an_unrestorable_manifest(project, tmp_path, monkeypatch):
+    monkeypatch.setattr("lib.project_archive.MAX_MANIFEST_BYTES", 100)
+    with pytest.raises(ValueError, match="manifest is too large"):
+        backup_project(project, tmp_path / "too-large.zip")
+    assert not (tmp_path / "too-large.zip").exists()
+
+
 def test_malformed_manifest_shape_fails_before_publication(tmp_path):
     archive = tmp_path / "bad.zip"
     with ZipFile(archive, "w") as target:

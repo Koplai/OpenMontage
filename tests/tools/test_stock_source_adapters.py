@@ -105,15 +105,6 @@ _SOURCE_CREDENTIALS = {
     "VIDEVO_API_KEY": "test-videvo",
 }
 
-# Adapters that still swallow transport failures, recorded as known
-# defects rather than encoded as expected behavior. `strict=True` means
-# the suite fails the moment one of them is fixed and left in this map.
-_STILL_SWALLOWS_TRANSPORT_ERRORS = {
-    "archive_org": "#511 follow-up: query cascade continues past a failed strategy",
-    "wikimedia": "#511 follow-up: query cascade continues past a failed strategy",
-    "pond5_pd": "#511 follow-up: API failure falls through to the web fallback",
-}
-
 
 class TransportError(Exception):
     """Distinct failure type so the assertion cannot pass by accident."""
@@ -183,16 +174,7 @@ def _adapter_names():
     return [source.name for source in all_sources()]
 
 
-def _transport_error_params():
-    params = []
-    for name in _adapter_names():
-        reason = _STILL_SWALLOWS_TRANSPORT_ERRORS.get(name)
-        marks = [pytest.mark.xfail(strict=True, reason=reason)] if reason else []
-        params.append(pytest.param(name, marks=marks, id=name))
-    return params
-
-
-@pytest.mark.parametrize("source_name", _transport_error_params())
+@pytest.mark.parametrize("source_name", _adapter_names(), ids=_adapter_names())
 def test_search_propagates_transport_errors(source_name, monkeypatch):
     def boom(*_args, **_kwargs):
         raise TransportError("simulated connection reset")
@@ -203,6 +185,15 @@ def test_search_propagates_transport_errors(source_name, monkeypatch):
         get_source(source_name).search(
             "ocean waves", SearchFilters(kind="any", per_page=5)
         )
+
+
+def test_pond5_does_not_advertise_unimplemented_free_search(monkeypatch):
+    source = get_source("pond5_pd")
+    for value in ("", "   "):
+        monkeypatch.setenv("POND5_API_KEY", value)
+        assert not source.is_available()
+        with pytest.raises(ValueError, match="POND5_API_KEY"):
+            source.search("fixture", SearchFilters())
 
 
 @pytest.mark.parametrize("source_name", _adapter_names(), ids=_adapter_names())

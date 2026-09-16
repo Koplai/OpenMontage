@@ -14,6 +14,8 @@ import types
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
+
 from tools import atlas_client
 from tools.graphics.atlas_image import AtlasImage
 from tools.video.atlas_video import AtlasVideo

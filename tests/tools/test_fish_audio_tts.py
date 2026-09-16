@@ -14,6 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
+
 from tools.audio.fish_audio_tts import FishAudioTTS
 from tools.base_tool import ToolStatus
 

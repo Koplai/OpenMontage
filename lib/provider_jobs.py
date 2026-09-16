@@ -8,6 +8,7 @@ interrupted POST without a job ID is deliberately not automatically retried.
 from __future__ import annotations
 
 import hashlib
+import errno
 import json
 import math
 import os
@@ -39,6 +40,12 @@ _MEDIA_INPUTS = {
     "input_video_path", "previous_interaction_id",
     "reference_audio_url", "reference_audio_urls", "reference_audio_paths",
 }
+_LOCAL_REFERENCE_KEYS = (_MEDIA_INPUTS - {"element_list", "previous_interaction_id"}) | {
+    "path", "file", "files", "reference_images", "reference_video", "reference_audio",
+    "audio", "audios", "audio_url", "audio_urls", "videos",
+    "last_image", "last_image_url", "image_tail", "first_frame", "first_frame_url",
+    "mask", "mask_url", "mask_image",
+}
 JOB_INPUT_PROPERTIES = {
     "project_dir": {"type": "string", "description": "Initialized project workspace; required for durable paid work."},
     "recovery_id": {"type": "string", "description": "Resume the same project-bound request; never submit a new generation."},
@@ -55,6 +62,34 @@ def reject_unsupported_media(inputs: dict, supported) -> None:
         raise ValueError(f"Unsupported media inputs cannot be ignored: {', '.join(unsupported)}")
 
 
+def local_media_digest(key: str, value: Any) -> str | None:
+    """Shared approval/recovery binding for an explicitly local media value.
+
+    Callers retain the same key when descending lists. Only declared media
+    aliases or path/file fields may trigger filesystem access, never prompt
+    strings. HTTP(S)/data references are opaque values, not local paths.
+    """
+    if (key.startswith("output") or key in _CONTROL_KEYS or _SECRET_KEY.search(key)
+            or not isinstance(value, (str, Path))):
+        return None
+    if key not in _LOCAL_REFERENCE_KEYS and not key.endswith(("_path", "_paths", "_file", "_files")):
+        return None
+    if str(value).lstrip().lower().startswith(("http:", "https:", "data:")):
+        return None
+    path = Path(value).expanduser()
+    try:
+        is_file = path.is_file()
+    except OSError as exc:
+        if exc.errno == errno.ENAMETOOLONG:
+            # Native image values may be raw base64 rather than filenames.
+            return None
+        raise
+    if not is_file:
+        return None
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
 def request_fingerprint(inputs: dict[str, Any]) -> str:
     """Hash effective content; changing bytes at a reference path changes identity."""
     def content(value, key=""):
@@ -62,19 +97,10 @@ def request_fingerprint(inputs: dict[str, Any]) -> str:
             return {k: content(v, k) for k, v in sorted(value.items())
                     if k not in _CONTROL_KEYS and not _SECRET_KEY.search(k)}
         if isinstance(value, (list, tuple)):
-            return [content(v, key.rstrip("s")) for v in value]
-        if isinstance(value, (str, Path)) and (
-            key.endswith(("_path", "_file")) or key in {"path", "file", "image", "images"}
-        ):
-            path = Path(value)
-            try:
-                is_file = path.is_file()
-            except OSError:
-                # Native image fields may contain base64 rather than a path.
-                is_file = False
-            if is_file:
-                with path.open("rb") as stream:
-                    return {"sha256": hashlib.file_digest(stream, "sha256").hexdigest()}
+            return [content(v, key) for v in value]
+        digest = local_media_digest(key, value)
+        if digest is not None:
+            return {"sha256": digest}
         return str(value) if isinstance(value, Path) else value
 
     encoded = json.dumps(content(inputs), sort_keys=True, separators=(",", ":"), allow_nan=False)

@@ -75,9 +75,10 @@ function renderSlate(s) {
   const cost = el("div", { class: "cost" });
   if (s.cost) {
     const spent = s.cost.total_spent_usd ?? 0;
-    const budget = spent + (s.cost.budget_remaining_usd ?? 0);
+    const held = s.cost.total_reserved_usd ?? 0;
+    const budget = spent + held + (s.cost.budget_remaining_usd ?? 0);
     const hasBudget = s.cost.budget_remaining_usd != null;
-    const pct = hasBudget && budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
+    const pct = hasBudget && budget > 0 ? Math.min(100, ((spent + held) / budget) * 100) : 0;
     cost.append(el("div", { class: "nums" }, el("b", {}, fmtMoney(spent)),
       hasBudget ? el("span", {}, ` / ${fmtMoney(budget)}`) : ""));
     if (hasBudget) {
@@ -85,7 +86,8 @@ function renderSlate(s) {
         class: pct > 90 ? "crit" : pct > 75 ? "warn" : "", style: `width:${pct}%`,
       })));
     }
-    cost.append(el("div", { class: "label" }, "generation spend"));
+    if (held > 0) cost.append(el("div", { class: "label" }, `${fmtMoney(held)} held / unsettled`));
+    cost.append(el("div", { class: "label" }, `generation spend · ${s.cost_source || "snapshot"}`));
   }
 
   return el("header", { class: "slate" },

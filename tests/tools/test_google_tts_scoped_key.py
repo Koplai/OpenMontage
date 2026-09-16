@@ -1,3 +1,7 @@
+import pytest
+
+pytestmark = pytest.mark.usefixtures("isolated_provider_unit")
+
 from tools.audio.google_tts import GoogleTTS
 from tools.google_credentials import has_google_credentials
 

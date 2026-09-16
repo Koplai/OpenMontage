@@ -83,6 +83,12 @@ silently hiding the missing module.
 by the production pipeline. Configuration presence does not prove successful
 authentication, quota, model access, or service health.
 
+Selector resolution is pure: it does not upload a local reference to an
+unselected hosting provider. For URL-only inputs, such as MiniMax direct
+reference URLs, provide an explicitly approved hosted URL or supported native
+data URI. A local path is not silently uploaded through fal.ai merely to make
+another provider accept it. Unsupported inputs block before submission.
+
 ## Local media and browser qualification
 
 ```bash
@@ -157,7 +163,9 @@ reviewed migration/reconciliation; this tool does not rewrite approval identitie
 or silently authorize spending from a copied ledger.
 
 The default size limit is 20 GiB; use `--max-bytes` explicitly for larger
-trusted projects. Store backups on access-controlled storage and apply an
+trusted projects. Streaming assets use ZIP64; archives are limited to 100,000
+files and an 8 MiB manifest. Local hard-link/directory-rename support is required
+for atomic, non-overwriting publication. Store backups on access-controlled storage and apply an
 appropriate retention policy. The tool does not upload anything, change
 storage permissions, or retrieve encryption keys.
 

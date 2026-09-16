@@ -662,16 +662,42 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
 
     stages = _build_stage_rail(pipeline_meta, checkpoints, history)
 
-    # Cost: latest checkpoint snapshot wins; fall back to manifest total.
+    # The atomic ledger is authoritative, including in-flight/unknown holds.
     cost = None
-    for cp in sorted(checkpoints.values(), key=lambda c: c.get("_mtime", 0), reverse=True):
-        if cp.get("cost_snapshot"):
-            cost = cp["cost_snapshot"]
-            break
-    if cost is None:
-        total = (artifacts.get("asset_manifest") or {}).get("total_cost_usd")
-        if total is not None:
-            cost = {"total_spent_usd": total}
+    cost_source = "unavailable"
+    ledger_path = project_dir / "cost_log.json"
+    if ledger_path.exists() or ledger_path.is_symlink():
+        from jsonschema.exceptions import ValidationError
+        from tools.cost_tracker import CostTracker
+
+        ledger = _read_json(ledger_path, project_dir, diagnostics)
+        if ledger is not None:
+            try:
+                if ledger_path.is_symlink() or ledger.get("version") != "2.0":
+                    raise ValueError("Untrusted or legacy ledger")
+                CostTracker._validate(ledger)
+                cost = {
+                    "total_spent_usd": ledger["budget_spent_usd"],
+                    "total_reserved_usd": ledger["budget_reserved_usd"],
+                    "budget_remaining_usd": (
+                        ledger["budget_total_usd"] - ledger["budget_spent_usd"]
+                        - ledger["budget_reserved_usd"]
+                    ),
+                }
+                cost_source = "ledger"
+            except (ValueError, TypeError, KeyError, OSError, ValidationError):
+                diagnose(diagnostics, "cost_log.json", "ledger requires review; stale cost totals are not shown")
+    else:
+        for cp in sorted(checkpoints.values(), key=lambda c: c.get("_mtime", 0), reverse=True):
+            if isinstance(cp.get("cost_snapshot"), dict) and cp["cost_snapshot"]:
+                cost = cp["cost_snapshot"]
+                cost_source = "checkpoint"
+                break
+        if cost is None:
+            total = (artifacts.get("asset_manifest") or {}).get("total_cost_usd")
+            if total is not None:
+                cost = {"total_spent_usd": total}
+                cost_source = "manifest"
 
     import time
     last_activity = _last_activity(project_dir)
@@ -701,6 +727,7 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
         "media": media,
         "events": events,
         "cost": cost,
+        "cost_source": cost_source,
         "last_activity": last_activity,
         "live": bool(last_activity and (now - last_activity) < LIVE_WINDOW_SECONDS),
         "diagnostics": diagnostics,

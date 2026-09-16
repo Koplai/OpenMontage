@@ -11,9 +11,17 @@ import pytest
 
 from tools.graphics.atlas_image import AtlasImage
 from tools.video.atlas_video import AtlasVideo
+from tools.cost_tracker import ApprovalRequiredError
 
 
 class TestGuardBlocksOutbound:
+
+    def test_loopback_classification_does_not_trust_hostname_prefixes(self):
+        from tests.conftest import _is_loopback
+
+        assert _is_loopback(("127.0.0.2", 80))
+        assert _is_loopback(("::1", 80))
+        assert not _is_loopback(("127.example.invalid", 443))
 
     def test_raw_socket_connect_is_blocked(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -49,21 +57,21 @@ class TestPaidToolsCannotSpend:
 
     def test_atlas_image_fails_instead_of_billing(self, monkeypatch, tmp_path):
         monkeypatch.setenv("ATLASCLOUD_API_KEY", "sk-looks-real-but-must-not-be-used")
-        result = AtlasImage().execute({
-            "prompt": "this must never reach the API",
-            "output_path": str(tmp_path / "nope.png"),
-        })
-        assert result.success is False
-        assert result.cost_usd == 0.0
+        with pytest.raises(ApprovalRequiredError, match="Unscoped"):
+            AtlasImage().execute({
+                "prompt": "this must never reach the API",
+                "output_path": str(tmp_path / "nope.png"),
+            })
+        assert not (tmp_path / "nope.png").exists()
 
     def test_atlas_video_fails_instead_of_billing(self, monkeypatch, tmp_path):
         monkeypatch.setenv("ATLASCLOUD_API_KEY", "sk-looks-real-but-must-not-be-used")
-        result = AtlasVideo().execute({
-            "prompt": "this must never reach the API",
-            "output_path": str(tmp_path / "nope.mp4"),
-        })
-        assert result.success is False
-        assert result.cost_usd == 0.0
+        with pytest.raises(ApprovalRequiredError, match="Unscoped"):
+            AtlasVideo().execute({
+                "prompt": "this must never reach the API",
+                "output_path": str(tmp_path / "nope.mp4"),
+            })
+        assert not (tmp_path / "nope.mp4").exists()
 
 
 class TestLiveApiMarkerIsSkipped:
@@ -74,3 +82,16 @@ class TestLiveApiMarkerIsSkipped:
             "A @live_api test executed without OPENMONTAGE_ALLOW_NETWORK=1 — "
             "the opt-in gate is broken and real spending is possible."
         )
+
+
+@pytest.mark.usefixtures("isolated_provider_unit")
+def test_isolated_provider_unit_blocks_network_even_with_live_opt_in():
+    # Run this test alone with OPENMONTAGE_ALLOW_NETWORK=1 to exercise the
+    # opted-in fixture independently of the session-wide guard.
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(0.01)
+    try:
+        with pytest.raises(Exception, match="Blocked a network connection"):
+            sock.connect(("203.0.113.1", 443))
+    finally:
+        sock.close()
