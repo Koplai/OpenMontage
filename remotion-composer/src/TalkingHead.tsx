@@ -1,11 +1,13 @@
 import {
   AbsoluteFill,
+  CalculateMetadataFunction,
   OffthreadVideo,
   Sequence,
   interpolate,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
+import { getVideoMetadata } from "@remotion/media-utils";
 import { CaptionOverlay, WordCaption } from "./components/CaptionOverlay";
 import { resolveAsset } from "./lib/resolveAsset";
 import { TextCard } from "./components/TextCard";
@@ -298,6 +300,10 @@ const PositionedOverlay: React.FC<{ overlay: TalkingHeadOverlay }> = ({
 export interface TalkingHeadProps {
   [key: string]: unknown;
   videoSrc: string;
+  trimBeforeSeconds?: number;
+  trimAfterSeconds?: number;
+  playbackRate?: number;
+  durationSeconds?: number;
   captions: WordCaption[];
   overlays?: TalkingHeadOverlay[];
   wordsPerPage?: number;
@@ -312,6 +318,9 @@ export interface TalkingHeadProps {
 
 export const TalkingHead: React.FC<TalkingHeadProps> = ({
   videoSrc,
+  trimBeforeSeconds = 0,
+  trimAfterSeconds,
+  playbackRate = 1,
   captions,
   overlays,
   wordsPerPage = 4,
@@ -329,6 +338,9 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
       {/* Layer 1: Video background */}
       <OffthreadVideo
         src={resolveAsset(videoSrc)}
+        trimBefore={Math.round(trimBeforeSeconds * fps)}
+        trimAfter={trimAfterSeconds === undefined ? undefined : Math.round(trimAfterSeconds * fps)}
+        playbackRate={playbackRate}
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
 
@@ -362,4 +374,19 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
       />
     </AbsoluteFill>
   );
+};
+
+export const calculateTalkingHeadMetadata: CalculateMetadataFunction<TalkingHeadProps> = async ({ props }) => {
+  if (!props.videoSrc) {
+    throw new Error("TalkingHead requires videoSrc; generic cuts must be adapted before rendering");
+  }
+  const speed = props.playbackRate ?? 1;
+  const sourceEnd = props.trimAfterSeconds
+    ?? (await getVideoMetadata(resolveAsset(props.videoSrc))).durationInSeconds;
+  const duration = (sourceEnd - (props.trimBeforeSeconds ?? 0)) / speed;
+  if (!Number.isFinite(duration) || duration <= 0 || speed <= 0
+    || (props.durationSeconds !== undefined && Math.abs(props.durationSeconds - duration) > 1e-6)) {
+    throw new Error("TalkingHead duration must agree with source trim and playbackRate");
+  }
+  return { durationInFrames: Math.max(1, Math.ceil(duration * 30)) };
 };

@@ -15,8 +15,16 @@
         "properties": {
           "id": { "type": "string" },
           "source": { "type": "string", "description": "Source file path or asset-manifest ID" },
-          "in_seconds": { "type": "number", "minimum": 0 },
-          "out_seconds": { "type": "number", "minimum": 0 },
+          "in_seconds": { "type": "number", "minimum": 0, "description": "Inclusive source trim, NOT timeline position." },
+          "out_seconds": { "type": "number", "minimum": 0, "description": "Exclusive source trim; must exceed in_seconds." },
+          "timeline_start_seconds": {
+            "type": "number", "minimum": 0,
+            "description": "Composition position. Omitted cuts append sequentially after previous cuts."
+          },
+          "timeline_duration_seconds": {
+            "type": "number", "exclusiveMinimum": 0,
+            "description": "Optional assertion: must equal (out_seconds - in_seconds) / speed. Runtimes reject disagreement."
+          },
           "speed": { "type": "number", "minimum": 0.1, "default": 1.0 },
           "layer": {
             "type": "string",

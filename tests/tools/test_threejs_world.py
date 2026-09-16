@@ -186,7 +186,11 @@ def test_hyperframes_render_existing_preserves_authored_entry(tmp_path, monkeypa
     def fake_run(args, *, cwd, timeout, check):
         output = Path(args[args.index("--output") + 1])
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(b"rendered")
+        subprocess.run([
+            "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+            "testsrc2=size=320x240:duration=1:rate=30",
+            "-c:v", "libx264", "-preset", "ultrafast", str(output),
+        ], check=True, capture_output=True)
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(tool, "_run_hf", fake_run)

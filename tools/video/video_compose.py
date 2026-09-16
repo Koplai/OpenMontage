@@ -31,15 +31,21 @@ the agent to re-ask the user rather than substituting a different engine.
 from __future__ import annotations
 
 import contextlib
-import json
+import functools
 import hashlib
+import json
 import logging
 import secrets
 import shutil
 import subprocess
 import time
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
+
+from lib.render_timeline import normalize_cuts, require_sequential, timeline_duration
+from lib.delivery_validation import content_sha256, validate_media
 from urllib.parse import unquote, urlsplit
 
 from tools.base_tool import (
@@ -53,6 +59,48 @@ from tools.base_tool import (
     ToolStability,
     ToolTier,
 )
+
+
+def _validate_rendered_video(path: Path) -> dict[str, Any]:
+    """Require a fresh, nonempty, decodable video, not just a zero CLI exit."""
+    return validate_media(path)
+
+
+def _atomic_render(default_output: str | Callable[[dict[str, Any]], str]):
+    """Isolate intermediates and publish only newly validated output bytes."""
+    def decorate(render):
+        @functools.wraps(render)
+        def wrapped(self, inputs, *args, **kwargs):
+            default = default_output(inputs) if callable(default_output) else default_output
+            requested = Path(inputs.get("output_path") or default).expanduser().resolve()
+            requested.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix=".render-", dir=requested.parent) as work:
+                staged = Path(work) / requested.name
+                try:
+                    result = render(self, {**inputs, "output_path": str(staged)}, *args, **kwargs)
+                    if not result.success:
+                        result.data["deliverable_accepted"] = False
+                        return result
+                    probe = _validate_rendered_video(staged)
+                    ed = inputs.get("edit_decisions") or {}
+                    if ed.get("cuts") and ed.get("composition_mode") != "atelier":
+                        expected = timeline_duration(ed["cuts"])
+                        video = next(s for s in probe["streams"] if s.get("codec_type") == "video")
+                        actual = float(video.get("duration") or probe["format"]["duration"])
+                        if abs(actual - expected) > 0.1:
+                            raise ValueError(f"Rendered visual duration {actual:.3f}s differs from cut timeline {expected:.3f}s")
+                    staged.replace(requested)
+                    result.data["output"] = str(requested)
+                    result.data["file_produced"] = True
+                    if result.data.get("final_review"):
+                        result.data["final_review"]["output_path"] = str(requested)
+                    result.artifacts = [str(requested) if a == str(staged) else a for a in result.artifacts]
+                    return result
+                except Exception as exc:
+                    return ToolResult(success=False, error=f"Render not published: {exc}",
+                                      data={"deliverable_accepted": False, "file_produced": False})
+        return wrapped
+    return decorate
 
 
 class VideoCompose(BaseTool):
@@ -242,7 +290,7 @@ class VideoCompose(BaseTool):
             return False
         # Check that node_modules are actually installed — without this,
         # npx remotion render will fail even though the project exists.
-        if not (composer_dir / "node_modules").exists():
+        if not (composer_dir / "node_modules" / "@remotion" / "cli" / "package.json").is_file():
             return False
         return True
 
@@ -308,19 +356,19 @@ class VideoCompose(BaseTool):
             info["hyperframes_note"] = (
                 "HyperFrames is available for HTML/CSS/GSAP composition. Use it "
                 "for kinetic typography, product promos, launch reels, "
-                "website-to-video, and registry-block-driven scenes. Consumed via "
-                "'npx hyperframes' (npm package: 'hyperframes'). "
+                "website-to-video, and registry-block-driven scenes. Execution uses "
+                "the pinned installed HyperFrames CLI entry, never an automatic install. "
                 "Before locking render_runtime='hyperframes' at the proposal stage, "
                 "verify the runtime with `hyperframes_compose` operation='doctor' "
                 "or `make hyperframes-doctor`. An 'available' flag from the runtime "
-                "check means node + ffmpeg + the npm package all resolve; it does "
+                "check means node + ffmpeg + the pinned package are installed; it does "
                 "not guarantee a render will succeed on the first specific "
                 "composition."
             )
         else:
             info["hyperframes_note"] = (
                 "HyperFrames is NOT available. Requires Node.js >= 22, FFmpeg, "
-                "npx on PATH, and the 'hyperframes' npm package to be resolvable. "
+                "and the pinned 'hyperframes' npm package to be installed. "
                 "Run `make hyperframes-doctor` to see the specific missing piece, "
                 "or call `hyperframes_compose` operation='doctor' directly."
             )
@@ -435,6 +483,85 @@ class VideoCompose(BaseTool):
             artifacts=[str(video_path)],
         )
 
+    @staticmethod
+    def _prepare_media_inputs(inputs: dict[str, Any], *, canonical_audio_supported=False) -> dict[str, Any]:
+        """Resolve approved external inputs or fail before any renderer executes."""
+        inputs = dict(inputs)
+        ed = inputs.get("edit_decisions") or inputs.get("composition_data") or {}
+        assets = {a["id"]: a.get("path") for a in
+                  (inputs.get("asset_manifest") or {}).get("assets", []) if "id" in a}
+        subs = ed.get("subtitles") or {}
+        subtitle = inputs.get("subtitle_path") or (
+            subs.get("source") if subs.get("enabled", True) else None
+        )
+        if subtitle:
+            inputs["subtitle_path"] = assets.get(subtitle, subtitle)
+        for key in ("audio_path", "subtitle_path"):
+            if inputs.get(key):
+                path = Path(inputs[key]).expanduser().resolve()
+                if not path.is_file():
+                    raise ValueError(f"{key} not found: {path}")
+                inputs[key] = str(path)
+        if subs.get("enabled") and not inputs.get("subtitle_path") and not ed.get("captions"):
+            raise ValueError("Approved subtitles enabled but no subtitle source or captions supplied")
+        if inputs.get("subtitle_path") and not inputs.get("options", {}).get("subtitle_burn", True):
+            raise ValueError("Approved subtitles cannot be dropped with subtitle_burn=false")
+        audio = ed.get("audio") or {}
+        if not canonical_audio_supported and not inputs.get("audio_path") and (
+            (audio.get("narration") or {}).get("segments")
+            or (audio.get("music") or {}).get("asset_id")
+            or (ed.get("music") or {}).get("asset_id") or audio.get("sfx")
+        ):
+            raise ValueError("Canonical audio segments/music/SFX require an approved mixed audio_path for this renderer")
+        return inputs
+
+    def _apply_external_media(self, output_path: Path, inputs: dict[str, Any]) -> dict[str, bool]:
+        """Common approved mix/subtitle post-pass for Remotion and HyperFrames."""
+        applied = {"has_mixed_audio": False, "has_subtitles": False}
+        if inputs.get("audio_path"):
+            mux = self._mux_external_audio(output_path, inputs["audio_path"])
+            if not mux.success:
+                raise ValueError(mux.error)
+            applied["has_mixed_audio"] = True
+        if inputs.get("subtitle_path"):
+            burned = output_path.with_name(f".captions-{secrets.token_hex(8)}.mp4")
+            try:
+                result = self._burn_subtitles({
+                    **inputs, "input_path": str(output_path), "output_path": str(burned),
+                    "subtitle_style": self._resolve_subtitle_style(
+                        inputs.get("subtitle_style"), inputs.get("edit_decisions"), inputs.get("playbook"),
+                    ),
+                })
+                if not result.success:
+                    raise ValueError(result.error)
+                _validate_rendered_video(burned)
+                burned.replace(output_path)
+                applied["has_subtitles"] = True
+            finally:
+                burned.unlink(missing_ok=True)
+        return applied
+
+    @staticmethod
+    def _require_subtitle_renderer(inputs: dict[str, Any]) -> None:
+        if not inputs.get("subtitle_path"):
+            return
+        mode = ((inputs.get("edit_decisions") or {}).get("subtitles") or {}).get("style")
+        if mode in ("word-by-word", "karaoke") and Path(inputs["subtitle_path"]).suffix.lower() not in {".ass", ".ssa"}:
+            raise ValueError(
+                f"Subtitle style {mode!r} requires approved timed ASS/SSA or embedded Remotion captions; "
+                "sentence subtitles will not be silently substituted."
+            )
+        proc = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-filters"], capture_output=True,
+            text=True, timeout=10, check=True,
+        )
+        if " subtitles " not in proc.stdout:
+            raise ValueError(
+                "Subtitle burn unavailable: installed FFmpeg lacks the subtitles (libass) filter. "
+                "Install a libass-enabled FFmpeg explicitly; approved subtitles will not be omitted."
+            )
+
+    @_atomic_render("composed_output.mp4")
     def _compose(self, inputs: dict[str, Any]) -> ToolResult:
         """FFmpeg composition: concat video cuts, add audio, burn subtitles.
 
@@ -442,9 +569,13 @@ class VideoCompose(BaseTool):
         are routed to Remotion via the render operation — call compose
         directly only for pure video pipelines (e.g. talking-head).
         """
+        inputs = self._prepare_media_inputs(inputs)
+        self._require_subtitle_renderer(inputs)
         edit_decisions = inputs.get("edit_decisions")
         if not edit_decisions:
             return ToolResult(success=False, error="edit_decisions required for compose")
+        if edit_decisions.get("render_runtime") not in (None, "", "ffmpeg"):
+            return ToolResult(success=False, error="compose executes FFmpeg, but a different render_runtime is locked")
 
         output_path = Path(inputs.get("output_path", "composed_output.mp4"))
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -483,9 +614,13 @@ class VideoCompose(BaseTool):
         except ValueError:
             target_w, target_h = 1920, 1080
 
-        cuts = edit_decisions.get("cuts", [])
+        cuts = normalize_cuts(edit_decisions.get("cuts", []))
+        require_sequential(cuts)
         if not cuts:
             return ToolResult(success=False, error="No cuts in edit_decisions")
+        for cut in cuts:
+            if not Path(cut["source"]).is_file():
+                return ToolResult(success=False, error=f"Cut source not found: {cut['source']}")
 
         # Resolve subtitle style using the layered priority resolver
         # (explicit > edit_decisions > playbook > defaults)
@@ -497,10 +632,6 @@ class VideoCompose(BaseTool):
         )
         inputs = dict(inputs)
         inputs["subtitle_style"] = resolved_sub_style
-
-        ed_subs = edit_decisions.get("subtitles", {})
-        if ed_subs.get("source") and not subtitle_path:
-            subtitle_path = ed_subs["source"]
 
         temp_dir = output_path.parent / ".compose_tmp"
         temp_dir.mkdir(parents=True, exist_ok=True)
@@ -573,11 +704,12 @@ class VideoCompose(BaseTool):
                             f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease",
                             f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black",
                         ]
-                    vf_parts: list[str] = [*geom, "setsar=1", "fps=30"]
+                    vf_parts: list[str] = [*geom, "setsar=1"]
                     af_parts: list[str] = []
                     if speed != 1.0:
-                        vf_parts.append(f"setpts={1.0/speed}*PTS")
+                        vf_parts.append(f"setpts=(PTS-STARTPTS)/{speed}")
                         af_parts.append(self._build_atempo(speed))
+                    vf_parts.append("fps=30")
 
                     cmd.extend(["-filter:v", ",".join(vf_parts)])
                     if af_parts:
@@ -630,7 +762,7 @@ class VideoCompose(BaseTool):
                             "-ac", "2",
                         ])
 
-                    cmd.append(str(seg_path))
+                    cmd.extend(["-t", str(cut["timeline_duration_seconds"]), str(seg_path)])
                     self.run_command(cmd)
 
                 temp_segments.append(seg_path)
@@ -639,7 +771,7 @@ class VideoCompose(BaseTool):
             concat_path = temp_dir / "concat_list.txt"
             with open(concat_path, "w", encoding="utf-8") as f:
                 for seg in temp_segments:
-                    safe = str(seg.resolve()).replace("\\", "/")
+                    safe = str(seg.resolve()).replace("\\", "/").replace("'", "'\\''")
                     f.write(f"file '{safe}'\n")
 
             concat_out = temp_dir / "concat.mp4"
@@ -656,16 +788,16 @@ class VideoCompose(BaseTool):
             final_input = concat_out
             vfilters = []
 
-            if subtitle_path and Path(subtitle_path).exists():
+            if subtitle_path:
                 style = inputs.get("subtitle_style", {})
                 ass_style = self._build_subtitle_style(style)
-                sub_escaped = str(Path(subtitle_path).resolve()).replace("\\", "/").replace(":", "\\:")
-                vfilters.append(f"subtitles='{sub_escaped}':force_style='{ass_style}'")
+                # A local safe basename avoids FFmpeg filter-grammar escaping
+                # of arbitrary caller paths (apostrophes, colons, brackets).
+                staged_subtitle = temp_dir / ("captions" + Path(subtitle_path).suffix)
+                shutil.copy2(subtitle_path, staged_subtitle)
+                vfilters.append(f"subtitles={staged_subtitle.name}:force_style='{ass_style}'")
 
             cmd = ["ffmpeg", "-y", "-i", str(final_input)]
-
-            if audio_path and Path(audio_path).exists():
-                cmd.extend(["-i", audio_path])
 
             # Determine if profile requires re-encoding (resize/fps change)
             # This must be checked BEFORE choosing copy vs encode, because
@@ -689,24 +821,23 @@ class VideoCompose(BaseTool):
             else:
                 cmd.extend(["-c:v", "copy"])
 
-            if audio_path and Path(audio_path).exists():
-                # Use type-based selectors (0:v, 1:a) instead of index-based
-                # (0:v:0) because source videos may have audio as stream 0
-                # and video as stream 1 (e.g. Kling-generated clips).
-                cmd.extend(["-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest"])
-            else:
-                cmd.extend(["-c:a", "copy"])
+            cmd.extend(["-c:a", "copy"])
 
             cmd.append(str(output_path))
-            self.run_command(cmd)
+            self.run_command(cmd, cwd=temp_dir)
+            if audio_path:
+                mux = self._mux_external_audio(output_path, audio_path)
+                if not mux.success:
+                    return mux
 
             return ToolResult(
                 success=True,
                 data={
                     "operation": "compose",
                     "cut_count": len(cuts),
-                    "has_subtitles": subtitle_path is not None,
-                    "has_mixed_audio": audio_path is not None,
+                    "has_subtitles": bool(subtitle_path),
+                    "has_mixed_audio": bool(audio_path),
+                    "executed_runtime": "ffmpeg",
                     "profile": profile_name,
                     "output": str(output_path),
                 },
@@ -720,11 +851,7 @@ class VideoCompose(BaseTool):
             for f in [concat_path, concat_out]:
                 if f is not None and f.exists():
                     f.unlink()
-            if temp_dir.exists():
-                try:
-                    temp_dir.rmdir()
-                except OSError:
-                    pass
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     _REMOTION_SCENE_TYPES = {
         "text_card", "stat_card", "callout", "comparison", "progress", "chart",
@@ -767,27 +894,21 @@ class VideoCompose(BaseTool):
         """Adapt canonical sequential cuts to CinematicRenderer's scene contract."""
 
         scenes: list[dict[str, Any]] = []
-        timeline_cursor = 0.0
         hard_transitions = {"cut", "none"}
         title_types = {"hero_title", "text_card", "title"}
 
-        for index, cut in enumerate(cuts):
-            try:
-                source_in = float(cut.get("in_seconds", 0))
-                source_out = float(cut.get("out_seconds", source_in))
-                speed = max(float(cut.get("speed", 1.0)), 0.1)
-            except (TypeError, ValueError):
-                continue
-            duration = max(0.0, (source_out - source_in) / speed)
-            if duration <= 0:
-                continue
+        for index, cut in enumerate(normalize_cuts(cuts)):
+            source_in = cut["in_seconds"]
+            source_out = cut["out_seconds"]
+            speed = cut["speed"]
+            duration = cut["timeline_duration_seconds"]
 
             scene_id = str(cut.get("id") or f"cut-{index + 1}")
             source = str(cut.get("source") or "")
             cut_type = str(cut.get("type") or "").lower()
             common = {
                 "id": scene_id,
-                "startSeconds": timeline_cursor,
+                "startSeconds": cut["timeline_start_seconds"],
                 "durationSeconds": duration,
             }
 
@@ -806,6 +927,7 @@ class VideoCompose(BaseTool):
                     scene["backgroundSrc"] = source
                     scene["backgroundTrimBeforeSeconds"] = source_in
                     scene["backgroundTrimAfterSeconds"] = source_out
+                    scene["backgroundPlaybackRate"] = speed
             else:
                 scene = {
                     **common,
@@ -821,7 +943,6 @@ class VideoCompose(BaseTool):
                     scene["fadeOutFrames"] = 0
 
             scenes.append(scene)
-            timeline_cursor += duration
 
         return scenes
 
@@ -887,7 +1008,9 @@ class VideoCompose(BaseTool):
                     (shutil.copytree if entry.is_dir() else shutil.copy2)(entry, link)
 
     @staticmethod
-    def _stage_remotion_media(value: Any, public_dir: Path) -> int:
+    def _stage_remotion_media(
+        value: Any, public_dir: Path, *, require_files: bool = False,
+    ) -> int:
         """Copy local media references into a Remotion public dir in-place.
 
         OffthreadVideo's compositor rejects ``file://`` sources. Rewriting
@@ -896,7 +1019,7 @@ class VideoCompose(BaseTool):
         """
 
         staged_by_source: dict[Path, str] = {}
-        media_keys = {"source", "src", "backgroundSrc"}
+        media_keys = {"source", "src", "videoSrc", "backgroundSrc", "backgroundImage", "backgroundVideo", "images"}
 
         def visit(node: Any, parent_key: str | None = None) -> Any:
             if isinstance(node, dict):
@@ -907,7 +1030,7 @@ class VideoCompose(BaseTool):
                 for index, child in enumerate(node):
                     node[index] = visit(child, parent_key)
                 return node
-            if not isinstance(node, str) or parent_key not in media_keys:
+            if not isinstance(node, str) or not node or parent_key not in media_keys:
                 return node
             if node.startswith(("http://", "https://", "data:")):
                 return node
@@ -918,11 +1041,16 @@ class VideoCompose(BaseTool):
                 raw_path = node
             source = Path(raw_path).resolve()
             if not source.is_file():
+                if require_files:
+                    if not (public_dir / raw_path).is_file():
+                        raise ValueError(f"Required Remotion media not found: {node}")
                 return node
             if source not in staged_by_source:
                 digest = hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
                 name = f"{digest}-{source.name}"
                 public_dir.mkdir(parents=True, exist_ok=True)
+                if (public_dir / name).is_symlink():
+                    (public_dir / name).unlink()
                 shutil.copy2(source, public_dir / name)
                 staged_by_source[source] = name
             return staged_by_source[source]
@@ -930,6 +1058,7 @@ class VideoCompose(BaseTool):
         visit(value)
         return len(staged_by_source)
 
+    @_atomic_render("renders/output.mp4")
     def _render_via_atelier(
         self,
         inputs: dict[str, Any],
@@ -959,6 +1088,8 @@ class VideoCompose(BaseTool):
             "concurrency":    <optional int>,
         }
         """
+        inputs = self._prepare_media_inputs(inputs)
+        self._require_subtitle_renderer(inputs)
         bespoke = edit_decisions.get("bespoke") or {}
         entry = bespoke.get("entry")
         comp_id = bespoke.get("composition_id")
@@ -1020,7 +1151,7 @@ class VideoCompose(BaseTool):
         output_path = Path(inputs.get("output_path", "renders/output.mp4")).resolve()
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        cmd = ["npx", "remotion", "render", str(effective_entry), str(comp_id), str(output_path)]
+        cmd = ["npx", "--no-install", "remotion", "render", str(effective_entry), str(comp_id), str(output_path)]
 
         props_path = bespoke.get("props_path")
         if props_path:
@@ -1033,8 +1164,9 @@ class VideoCompose(BaseTool):
         public_dir = bespoke.get("public_dir")
         if public_dir:
             pd = Path(public_dir).resolve()
-            if pd.exists():
-                cmd.append(f"--public-dir={pd}")
+            if not pd.is_dir():
+                return ToolResult(success=False, error=f"atelier public_dir not found: {pd}")
+            cmd.append(f"--public-dir={pd}")
 
         if bespoke.get("scale"):
             cmd.append(f"--scale={bespoke['scale']}")
@@ -1056,10 +1188,7 @@ class VideoCompose(BaseTool):
                 error=f"Atelier render completed but output file missing: {output_path}",
             )
 
-        if inputs.get("audio_path"):
-            mux_result = self._mux_external_audio(output_path, inputs["audio_path"])
-            if not mux_result.success:
-                return mux_result
+        applied = self._apply_external_media(output_path, inputs)
 
         # --- Atelier post-render review -------------------------------------
         # The cut-schema paths run _run_final_review (technical/visual/audio
@@ -1075,6 +1204,8 @@ class VideoCompose(BaseTool):
             proposal_packet=inputs.get("proposal_packet"),
             narration_transcript_path=inputs.get("narration_transcript_path"),
             script_text=inputs.get("script_text"),
+            applied_media=applied,
+            executed_runtime="remotion",
         )
 
         atelier_checks = self._run_atelier_checks(entry_path, bespoke)
@@ -1096,9 +1227,12 @@ class VideoCompose(BaseTool):
             "output": str(output_path),
             "final_review": final_review,
             "final_review_status": final_review.get("status"),
+            "executed_runtime": "remotion",
+            "deliverable_accepted": final_review.get("status") == "pass",
+            **applied,
         }
 
-        if final_review.get("status") == "fail":
+        if final_review.get("status") != "pass":
             return ToolResult(
                 success=False,
                 error=(
@@ -1520,13 +1654,14 @@ class VideoCompose(BaseTool):
         This is the primary entry point for the compose-director skill.
         It resolves asset IDs and routes to the composition engine:
 
-        - **Remotion (default):** Used for all compositions when available —
+        - **Remotion (explicit):** React-based compositions —
           video clips, images, animated scenes, component types, mixed content.
           Remotion embeds video via <OffthreadVideo> and handles transitions,
           overlays, and profile scaling natively.
-        - **FFmpeg (fallback):** Used only when Remotion is unavailable, or
-          when the agent explicitly calls operation='compose' for simple
-          trim/concat operations.
+        - **FFmpeg (explicit):** Simple trim/concat operations.
+        - **HyperFrames (explicit):** HTML/CSS/GSAP compositions.
+
+        No engine is a silent fallback for another engine.
 
         The agent should pass edit_decisions, asset_manifest, and optionally
         profile, subtitle_path, audio_path, and options.
@@ -1566,6 +1701,14 @@ class VideoCompose(BaseTool):
                 ),
             )
 
+        if render_runtime == "remotion" and not self._remotion_available():
+            return ToolResult(success=False, error=(
+                "Locked Remotion runtime unavailable. This is a BLOCKER; "
+                "no FFmpeg substitution was executed."
+            ), data={"requested_runtime": render_runtime, "executed_runtime": None})
+        inputs = self._prepare_media_inputs(
+            inputs, canonical_audio_supported=render_runtime == "hyperframes",
+        )
         # --- Atelier (bespoke) mode -------------------------------------
         # Hand-authored, project-local Remotion composition. Deliberately
         # bypasses the cut-schema, the stock scene-type registry, and the
@@ -1621,7 +1764,7 @@ class VideoCompose(BaseTool):
 
         # Resolve asset IDs in cuts to file paths
         resolved_cuts = []
-        for cut in cuts:
+        for cut in normalize_cuts(cuts):
             source_id = cut.get("source", "")
             resolved_cut = dict(cut)
             if source_id in asset_lookup:
@@ -1656,66 +1799,20 @@ class VideoCompose(BaseTool):
                 profile=profile,
             )
         # --- Explicit Remotion path (render_runtime == 'remotion') ---
-        if self._needs_remotion(resolved_cuts):
-            remotion_inputs: dict[str, Any] = {
-                "edit_decisions": dict(edit_decisions, cuts=resolved_cuts),
-                "output_path": str(output_path),
-            }
-            if profile:
-                remotion_inputs["profile"] = profile
-            # Forward the creator-facing render timeout through the high-level
-            # render path (execute(operation="render") -> _render), otherwise it
-            # would only take effect on a direct _remotion_render() call.
-            if inputs.get("remotion_timeout_ms") is not None:
-                remotion_inputs["remotion_timeout_ms"] = inputs["remotion_timeout_ms"]
-            if inputs.get("public_dir") is not None:
-                remotion_inputs["public_dir"] = inputs["public_dir"]
-            render_result = self._remotion_render(remotion_inputs)
-
-            # Governance: NEVER silently fall back to FFmpeg when Remotion fails.
-            # The agent must decide the fallback path, not the tool.
-            if not render_result.success:
-                renderer_family = edit_decisions.get("renderer_family", "unknown")
-                return ToolResult(
-                    success=False,
-                    error=(
-                        f"Remotion render failed for renderer_family={renderer_family!r}. "
-                        f"Underlying error: {render_result.error}\n\n"
-                        f"This composition requires Remotion (images, text cards, animations). "
-                        f"Options:\n"
-                        f"  1. Fix Remotion setup (cd remotion-composer && npm install)\n"
-                        f"  2. Re-run with operation='compose' for FFmpeg-only (video cuts only)\n"
-                        f"  3. Approve a degraded FFmpeg render (still images → Ken Burns)\n\n"
-                        f"Per governance: renderer downgrade requires user approval."
-                    ),
-                )
-            if inputs.get("audio_path"):
-                mux_result = self._mux_external_audio(output_path, inputs["audio_path"])
-                if not mux_result.success:
-                    return mux_result
-                render_result.data["has_mixed_audio"] = True
-        else:
-            # --- FFmpeg fallback: only when Remotion is unavailable ---
-            options = inputs.get("options", {})
-            subtitle_burn = options.get("subtitle_burn", True)
-
-            # Resolve subtitle_path from edit_decisions if not provided
-            subtitle_path = inputs.get("subtitle_path")
-            if subtitle_burn and not subtitle_path:
-                ed_subs = edit_decisions.get("subtitles", {})
-                if ed_subs.get("enabled") and ed_subs.get("source"):
-                    subtitle_path = ed_subs["source"]
-
-            # Build compose inputs
-            compose_inputs = dict(inputs)
-            compose_inputs["edit_decisions"] = dict(edit_decisions, cuts=resolved_cuts)
-            compose_inputs["output_path"] = str(output_path)
-            if subtitle_path:
-                compose_inputs["subtitle_path"] = subtitle_path
-            if profile:
-                compose_inputs["profile"] = profile
-
-            render_result = self._compose(compose_inputs)
+        remotion_inputs: dict[str, Any] = {
+            **inputs,
+            "edit_decisions": dict(edit_decisions, cuts=resolved_cuts),
+            "output_path": str(output_path),
+        }
+        if profile:
+            remotion_inputs["profile"] = profile
+        render_result = self._remotion_render(remotion_inputs)
+        render_result.data["requested_runtime"] = render_runtime
+        if not render_result.success:
+            return render_result
+        if not output_path.is_file():
+            return ToolResult(success=False, error="Remotion reported success without a fresh output",
+                              data={"deliverable_accepted": False})
 
         # --- Post-render: mandatory final self-review ---
         if render_result.success and output_path.exists():
@@ -1727,6 +1824,8 @@ class VideoCompose(BaseTool):
                 script_text=inputs.get("script_text") or self._read_text_file(
                     inputs.get("script_path")
                 ),
+                applied_media=render_result.data,
+                executed_runtime="remotion",
             )
 
             # Attach final_review to the ToolResult data so the compose-director
@@ -1735,9 +1834,10 @@ class VideoCompose(BaseTool):
                 render_result.data = {}
             render_result.data["final_review"] = final_review
             render_result.data["final_review_status"] = final_review["status"]
+            render_result.data["deliverable_accepted"] = final_review["status"] == "pass"
 
             # If the self-review says fail, downgrade the ToolResult
-            if final_review["status"] == "fail":
+            if final_review["status"] != "pass":
                 return ToolResult(
                     success=False,
                     error=(
@@ -1774,7 +1874,7 @@ class VideoCompose(BaseTool):
                     "Per governance this is a BLOCKER — surface it to the user "
                     "per AGENT_GUIDE.md > 'Escalate Blockers Explicitly' and wait "
                     "for approval before switching runtime. Requirements: "
-                    "Node.js >= 22, FFmpeg, and npx on PATH. See "
+                    "Node.js >= 22, FFmpeg, and the pinned installed CLI. See "
                     "tools/video/hyperframes_compose.py for the specific missing piece."
                 ),
             )
@@ -1823,6 +1923,9 @@ class VideoCompose(BaseTool):
             "edit_decisions": dict(edit_decisions, cuts=resolved_cuts),
             "asset_manifest": asset_manifest,
         }
+        for key in ("audio_path", "subtitle_path", "subtitle_style", "draft"):
+            if key in inputs:
+                hf_inputs[key] = inputs[key]
         if playbook_data:
             hf_inputs["playbook"] = playbook_data
         if profile:
@@ -1841,6 +1944,7 @@ class VideoCompose(BaseTool):
             hf_inputs["snapshots"] = inputs["snapshots"]
 
         render_result = HyperFramesCompose().execute(hf_inputs)
+        render_result.data["requested_runtime"] = "hyperframes"
 
         if not render_result.success:
             return ToolResult(
@@ -1855,6 +1959,9 @@ class VideoCompose(BaseTool):
             )
 
         # Post-render: mandatory final self-review (identical contract to the Remotion path).
+        if not output_path.is_file():
+            return ToolResult(success=False, error="HyperFrames reported success without a fresh output",
+                              data={"deliverable_accepted": False})
         if output_path.exists():
             final_review = self._run_final_review(
                 output_path,
@@ -1864,12 +1971,15 @@ class VideoCompose(BaseTool):
                 script_text=inputs.get("script_text") or self._read_text_file(
                     inputs.get("script_path")
                 ),
+                applied_media=render_result.data,
+                executed_runtime="hyperframes",
             )
             if render_result.data is None:
                 render_result.data = {}
             render_result.data["final_review"] = final_review
             render_result.data["final_review_status"] = final_review["status"]
-            if final_review["status"] == "fail":
+            render_result.data["deliverable_accepted"] = final_review["status"] == "pass" and not inputs.get("draft")
+            if not render_result.data["deliverable_accepted"]:
                 return ToolResult(
                     success=False,
                     error=(
@@ -1914,6 +2024,10 @@ class VideoCompose(BaseTool):
             compose_inputs["profile"] = profile
 
         render_result = self._compose(compose_inputs)
+        render_result.data["requested_runtime"] = "ffmpeg"
+        if render_result.success and not output_path.is_file():
+            return ToolResult(success=False, error="FFmpeg reported success without a fresh output",
+                              data={"deliverable_accepted": False})
 
         if render_result.success and output_path.exists():
             final_review = self._run_final_review(
@@ -1924,12 +2038,15 @@ class VideoCompose(BaseTool):
                 script_text=inputs.get("script_text") or self._read_text_file(
                     inputs.get("script_path")
                 ),
+                applied_media=render_result.data,
+                executed_runtime="ffmpeg",
             )
             if render_result.data is None:
                 render_result.data = {}
             render_result.data["final_review"] = final_review
             render_result.data["final_review_status"] = final_review["status"]
-            if final_review["status"] == "fail":
+            render_result.data["deliverable_accepted"] = final_review["status"] == "pass"
+            if final_review["status"] != "pass":
                 return ToolResult(
                     success=False,
                     error=(
@@ -1941,6 +2058,7 @@ class VideoCompose(BaseTool):
 
         return render_result
 
+    @_atomic_render("renders/remotion_output.mp4")
     def _remotion_render(self, inputs: dict[str, Any]) -> ToolResult:
         """Render via Remotion (requires Node.js + npx).
 
@@ -1948,10 +2066,12 @@ class VideoCompose(BaseTool):
         types, and transitions using React-based frame-accurate rendering.
         Accepts edit_decisions (with resolved file paths) or raw composition_data.
         """
-        if not shutil.which("npx"):
+        inputs = self._prepare_media_inputs(inputs)
+        self._require_subtitle_renderer(inputs)
+        if not self._remotion_available():
             return ToolResult(
                 success=False,
-                error="npx not found. Install Node.js to use Remotion rendering.",
+                error="Remotion unavailable: install the locked composer dependencies and Node.js explicitly.",
             )
 
         composition_data = inputs.get("edit_decisions") or inputs.get("composition_data")
@@ -1960,6 +2080,8 @@ class VideoCompose(BaseTool):
                 success=False,
                 error="edit_decisions or composition_data required for remotion_render",
             )
+        if composition_data.get("render_runtime") not in (None, "", "remotion"):
+            return ToolResult(success=False, error="remotion_render cannot execute a different locked render_runtime")
 
         output_path = Path(inputs.get("output_path", "renders/remotion_output.mp4"))
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1968,6 +2090,13 @@ class VideoCompose(BaseTool):
 
         # Deep-copy props so we don't mutate the original
         props = json.loads(json.dumps(composition_data))
+        if props.get("cuts"):
+            if inputs.get("edit_decisions") or props.get("render_runtime"):
+                props["cuts"] = normalize_cuts(props["cuts"])
+            else:
+                # Preserve legacy raw Explainer composition props, whose in/out
+                # were timeline coordinates, without reinterpreting artifacts.
+                props.setdefault("timeline_mode", "legacy")
 
         # Build a custom themeConfig from the playbook's actual colors.
         # This ensures every video gets a unique visual identity derived
@@ -2004,26 +2133,41 @@ class VideoCompose(BaseTool):
                     success=False,
                     error="CinematicRenderer received cuts but none could be adapted into scenes.",
                 )
+        elif composition_id == "TalkingHead" and props.get("cuts"):
+            presenter_cuts = normalize_cuts(props.pop("cuts"))
+            require_sequential(presenter_cuts)
+            if len(presenter_cuts) != 1 or not presenter_cuts[0].get("source") or self._is_image(Path(presenter_cuts[0]["source"])):
+                return ToolResult(success=False, error=(
+                    "Presenter requires one video cut; pre-compose multiple cuts before presenter rendering."
+                ))
+            presenter = presenter_cuts[0]
+            props.update(
+                videoSrc=presenter["source"],
+                trimBeforeSeconds=presenter["in_seconds"],
+                trimAfterSeconds=presenter["out_seconds"],
+                playbackRate=presenter["speed"],
+                durationSeconds=presenter["timeline_duration_seconds"],
+            )
+        if composition_id == "TalkingHead" and not props.get("videoSrc"):
+            return ToolResult(success=False, error="Presenter requires a nonempty videoSrc or one video cut")
+        if composition_id == "CinematicRenderer" and any(
+            scene.get("kind") == "video" and not scene.get("src") for scene in props["scenes"]
+        ):
+            return ToolResult(success=False, error="Cinematic video scene requires a nonempty src")
 
         requested_public_dir = inputs.get("public_dir")
-        cleanup_public_dir = False
-        public_dir: Path | None = None
+        cleanup_public_dir = True
+        source_public_dir = composer_dir / "public"
         if requested_public_dir:
-            public_dir = Path(requested_public_dir).resolve()
-            if not public_dir.is_dir():
+            source_public_dir = Path(requested_public_dir).resolve()
+            if not source_public_dir.is_dir():
                 return ToolResult(
                     success=False,
-                    error=f"Remotion public_dir does not exist or is not a directory: {public_dir}",
+                    error=f"Remotion public_dir does not exist or is not a directory: {source_public_dir}",
                 )
-        else:
-            # Unique per render. A name derived only from the output stem is
-            # shared by every render of that output: concurrent renders
-            # overwrite each other's staged media and the first to finish
-            # deletes the other's inputs, and cleanup would also erase a
-            # pre-existing directory that happened to match. The random suffix
-            # means the dir we delete is always one this invocation created.
-            public_dir = output_path.parent / f".remotion-public-{output_path.stem}-{secrets.token_hex(4)}"
-            cleanup_public_dir = True
+        # Even a caller-supplied public directory is read-only input, never a
+        # shared destination for this invocation's media copies.
+        public_dir: Path | None = output_path.parent / f".remotion-public-{secrets.token_hex(8)}"
 
         # Everything from staging onward is guarded, so a failure during props
         # writing or command setup — not just during the render — still removes
@@ -2032,23 +2176,17 @@ class VideoCompose(BaseTool):
         staged_count = 0
         profile_name = inputs.get("profile")
         try:
-            staged_count = self._stage_remotion_media(props, public_dir)
-            if not staged_count and cleanup_public_dir:
+            self._mirror_public_dir(source_public_dir, public_dir)
+            staged_count = self._stage_remotion_media(props, public_dir, require_files=True)
+            if not staged_count and not public_dir.exists():
                 public_dir = None
-            elif cleanup_public_dir:
-                # We are about to override Remotion's public dir with our own, so
-                # mirror the real one in — otherwise assets already staged into
-                # remotion-composer/public/ by earlier pipeline stages 404.
-                # Only for the dir we created and will delete; a caller-supplied
-                # public_dir is their contract to populate, so leave it untouched.
-                self._mirror_public_dir(composer_dir / "public", public_dir)
 
             # Write the fully adapted/staged props, never the original cut payload.
             with open(props_path, "w", encoding="utf-8") as f:
                 json.dump(props, f)
 
             cmd = [
-                "npx", "remotion", "render",
+                "npx", "--no-install", "remotion", "render",
                 str(composer_dir / "src" / "index.tsx"),
                 composition_id,
                 str(output_path),
@@ -2096,7 +2234,10 @@ class VideoCompose(BaseTool):
             # run_command uses check=True + capture_output, so the useful
             # Remotion diagnostics live in stderr/stdout — surface the tail
             # instead of the bare "returned non-zero exit status 1".
-            detail = (e.stderr or e.stdout or "").strip()
+            detail = e.stderr or e.stdout or ""
+            if isinstance(detail, bytes):
+                detail = detail.decode("utf-8", errors="replace")
+            detail = detail.strip()
             tail = "\n".join(detail.splitlines()[-25:]) if detail else "(no output captured)"
             return ToolResult(
                 success=False,
@@ -2124,6 +2265,12 @@ class VideoCompose(BaseTool):
                 error=f"Remotion render completed but output file missing: {output_path}",
             )
 
+        applied = self._apply_external_media(output_path, inputs)
+        embedded_captions = props.get("captions")
+        if composition_id == "CinematicRenderer" and isinstance(embedded_captions, dict):
+            embedded_captions = embedded_captions.get("words")
+        if isinstance(embedded_captions, list) and embedded_captions:
+            applied["has_subtitles"] = True
         return ToolResult(
             success=True,
             data={
@@ -2131,6 +2278,8 @@ class VideoCompose(BaseTool):
                 "output": str(output_path),
                 "profile": profile_name,
                 "staged_media_count": staged_count,
+                "executed_runtime": "remotion",
+                **applied,
             },
             artifacts=[str(output_path)],
         )
@@ -2289,6 +2438,8 @@ class VideoCompose(BaseTool):
         proposal_packet: dict[str, Any] | None = None,
         narration_transcript_path: str | Path | None = None,
         script_text: str | None = None,
+        applied_media: dict[str, Any] | None = None,
+        executed_runtime: str | None = None,
     ) -> dict[str, Any]:
         """Run post-render self-review and produce a final_review artifact.
 
@@ -2359,10 +2510,11 @@ class VideoCompose(BaseTool):
                     target_dur = (
                         edit_decisions.get("total_duration_seconds")
                         or edit_decisions.get("metadata", {}).get("target_duration_seconds")
+                        or (timeline_duration(edit_decisions["cuts"]) if edit_decisions.get("cuts") else None)
                     )
                 if target_dur and target_dur > 0:
                     drift_pct = abs(duration - target_dur) / target_dur
-                    if drift_pct > 0.25:
+                    if abs(duration - target_dur) > 0.1:
                         technical_probe["issues"].append(
                             f"Duration drift: rendered {duration:.1f}s vs target {target_dur}s "
                             f"({drift_pct:.0%} off). Review pacing or trim."
@@ -2399,8 +2551,12 @@ class VideoCompose(BaseTool):
         duration = technical_probe.get("duration_seconds", 0)
         if duration > 0 and technical_probe.get("valid_container"):
             try:
-                frame_dir = output_path.parent / ".final_review_frames"
-                frame_dir.mkdir(parents=True, exist_ok=True)
+                frame_root = output_path.parent
+                if frame_root.name.startswith(".render-"):
+                    frame_root = frame_root.parent
+                frame_dir = Path(tempfile.mkdtemp(
+                    prefix=f".final-review-{output_path.stem}-", dir=frame_root,
+                ))
                 # Sample at 10%, 35%, 65%, 90% of duration
                 sample_points = [0.10, 0.35, 0.65, 0.90]
                 frame_paths = []
@@ -2514,7 +2670,7 @@ class VideoCompose(BaseTool):
             #      explicitly copied it to opt into in-tool swap detection)
             #   3. edit_decisions.render_runtime itself (cannot detect a swap in
             #      this case — reviewer does cross-artifact comparison instead)
-            render_runtime_edit = (edit_decisions.get("render_runtime") or "").strip().lower()
+            render_runtime_edit = (executed_runtime or edit_decisions.get("render_runtime") or "").strip().lower()
             if render_runtime_edit:
                 promise_preservation["render_runtime_used"] = render_runtime_edit
 
@@ -2599,7 +2755,9 @@ class VideoCompose(BaseTool):
         }
         if edit_decisions:
             ed_subs = edit_decisions.get("subtitles", {})
-            subtitle_check["subtitles_expected"] = bool(ed_subs.get("enabled"))
+            subtitle_check["subtitles_expected"] = bool(
+                ed_subs.get("enabled") or (applied_media or {}).get("has_subtitles")
+            )
 
             # Check if output has subtitle stream
             if technical_probe.get("valid_container"):
@@ -2622,15 +2780,14 @@ class VideoCompose(BaseTool):
                     if (subtitle_check["subtitles_expected"]
                             and not subtitle_check["subtitles_present"]):
                         # Check if subtitle_path was used (burned in)
-                        sub_source = ed_subs.get("source")
-                        if sub_source and Path(sub_source).exists():
-                            # Burned-in subtitles are not detectable as streams
+                        if (applied_media or {}).get("has_subtitles"):
+                            # Evidence comes from a completed, validated burn,
+                            # never from the existence of the input subtitle file.
                             subtitle_check["subtitles_present"] = True
-                            subtitle_check["coverage_ratio"] = 1.0
                         else:
                             subtitle_check["issues"].append(
                                 "Subtitles expected but not found in output and "
-                                "no subtitle source file exists for burn-in"
+                                "no completed subtitle burn was recorded"
                             )
                 except Exception as e:
                     subtitle_check["issues"].append(f"Subtitle check error: {e}")
@@ -2655,6 +2812,7 @@ class VideoCompose(BaseTool):
                 "silent downgrade", "delivery promise violation",
                 "effectively silent", "ffprobe failed", "suspiciously short",
                 "tts punctuation leak",  # reading literal punctuation aloud
+                "subtitles expected", "runtime changed", "duration drift",
             ])
         ]
 
@@ -2686,7 +2844,11 @@ class VideoCompose(BaseTool):
             },
             "issues_found": issues,
             "recommended_action": recommended_action,
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
         }
+        if output_path.is_file():
+            final_review["output_sha256"] = content_sha256(output_path)
+            final_review["output_size_bytes"] = output_path.stat().st_size
 
         log.info(
             "Final review: status=%s, issues=%d, action=%s",
@@ -2719,20 +2881,18 @@ class VideoCompose(BaseTool):
 
         style = inputs.get("subtitle_style", {})
         ass_style = self._build_subtitle_style(style)
-        sub_escaped = str(subtitle_path.resolve()).replace("\\", "/").replace(":", "\\:")
         codec = inputs.get("codec", "libx264")
         crf = inputs.get("crf", 23)
 
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", str(input_path),
-            "-vf", f"subtitles='{sub_escaped}':force_style='{ass_style}'",
-            "-c:v", codec, "-crf", str(crf),
-            "-c:a", "copy",
-            str(output_path),
-        ]
-
-        self.run_command(cmd)
+        with tempfile.TemporaryDirectory(prefix=".subtitles-", dir=output_path.parent) as work:
+            staged = Path(work) / ("captions" + subtitle_path.suffix)
+            shutil.copy2(subtitle_path, staged)
+            cmd = [
+                "ffmpeg", "-y", "-i", str(input_path.resolve()),
+                "-vf", f"subtitles={staged.name}:force_style='{ass_style}'",
+                "-c:v", codec, "-crf", str(crf), "-c:a", "copy", str(output_path.resolve()),
+            ]
+            self.run_command(cmd, cwd=work)
 
         return ToolResult(
             success=True,
@@ -2895,7 +3055,16 @@ class VideoCompose(BaseTool):
 
         # Layer 2: edit_decisions subtitle style
         if edit_decisions:
-            ed_style = edit_decisions.get("subtitles", {}).get("style", {})
+            subtitle_config = edit_decisions.get("subtitles", {})
+            ed_style = subtitle_config.get("style", {})
+            if not isinstance(ed_style, dict):
+                # Canonical style is a display-mode string. Typography lives
+                # beside it; legacy dictionary styles remain supported.
+                ed_style = {k: v for k, v in subtitle_config.items()
+                            if k in resolved or k in {"outline_color"}}
+                for source, target in (("color", "primary_color"), ("background", "back_color")):
+                    if subtitle_config.get(source):
+                        ed_style[target] = subtitle_config[source]
             for k, v in ed_style.items():
                 if v is not None:
                     resolved[k] = v

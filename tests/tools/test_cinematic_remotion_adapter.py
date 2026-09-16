@@ -1,9 +1,28 @@
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from tools.video.video_compose import VideoCompose
+
+
+@pytest.fixture
+def rendered_fixture(tmp_path, request):
+    """The CLI is stubbed, but its output must still be a real decodable video."""
+    if not shutil.which("ffmpeg"):
+        pytest.skip("requires FFmpeg for synthetic output")
+    path = tmp_path / "synthetic.mp4"
+    duration = 50 if "scene_count" in request.node.name else (
+        1 if "direct_cinematic" in request.node.name else 2
+    )
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+        f"testsrc2=size=320x240:duration={duration}:rate=30",
+        "-c:v", "libx264", "-preset", "ultrafast", str(path),
+    ], check=True, capture_output=True)
+    return path
 
 
 def test_cinematic_cut_adapter_builds_a_sequential_timeline() -> None:
@@ -75,7 +94,7 @@ def test_remotion_media_staging_decodes_file_uris(tmp_path, uri_style) -> None:
     assert (public_dir / props["scenes"][0]["src"]).read_bytes() == b"video"
 
 
-def test_remotion_render_adapts_cuts_and_stages_local_video(monkeypatch, tmp_path) -> None:
+def test_remotion_render_adapts_cuts_and_stages_local_video(monkeypatch, tmp_path, rendered_fixture) -> None:
     source = tmp_path / "source.mp4"
     source.write_bytes(b"not-a-real-video")
     output = tmp_path / "render.mp4"
@@ -91,7 +110,7 @@ def test_remotion_render_adapts_cuts_and_stages_local_video(monkeypatch, tmp_pat
         captured["staged_exists_during_render"] = (
             public_dir / captured["props"]["scenes"][0]["src"]
         ).exists()
-        output.write_bytes(b"rendered")
+        shutil.copy2(rendered_fixture, command[command.index("render") + 3])
 
     monkeypatch.setattr(VideoCompose, "run_command", fake_run_command)
 
@@ -117,13 +136,13 @@ def test_remotion_render_adapts_cuts_and_stages_local_video(monkeypatch, tmp_pat
     assert result.data["staged_media_count"] == 1
 
 
-def test_remotion_timeout_scales_with_scene_count(monkeypatch, tmp_path) -> None:
+def test_remotion_timeout_scales_with_scene_count(monkeypatch, tmp_path, rendered_fixture) -> None:
     output = tmp_path / "render.mp4"
     captured = {}
 
     def fake_run_command(self, command, **kwargs):
         captured["timeout"] = kwargs["timeout"]
-        output.write_bytes(b"rendered")
+        shutil.copy2(rendered_fixture, command[command.index("render") + 3])
 
     monkeypatch.setattr(VideoCompose, "run_command", fake_run_command)
     cuts = [
@@ -147,14 +166,14 @@ def test_remotion_timeout_scales_with_scene_count(monkeypatch, tmp_path) -> None
     assert captured["timeout"] == 750
 
 
-def test_remotion_render_preserves_direct_cinematic_scenes(monkeypatch, tmp_path) -> None:
+def test_remotion_render_preserves_direct_cinematic_scenes(monkeypatch, tmp_path, rendered_fixture) -> None:
     output = tmp_path / "render.mp4"
     captured = {}
 
     def fake_run_command(self, command, **kwargs):
         props_arg = next(arg for arg in command if arg.startswith("--props="))
         captured["props"] = json.loads(Path(props_arg.split("=", 1)[1]).read_text())
-        output.write_bytes(b"rendered")
+        shutil.copy2(rendered_fixture, command[command.index("render") + 3])
 
     monkeypatch.setattr(VideoCompose, "run_command", fake_run_command)
     scene = {

@@ -169,6 +169,7 @@ const TitleCard: React.FC<{
   backgroundSrc?: string;
   backgroundTrimBeforeSeconds?: number;
   backgroundTrimAfterSeconds?: number;
+  backgroundPlaybackRate?: number;
   variant?: "plate" | "overlay";
 }> = ({
   text,
@@ -180,6 +181,7 @@ const TitleCard: React.FC<{
   backgroundSrc,
   backgroundTrimBeforeSeconds,
   backgroundTrimAfterSeconds,
+  backgroundPlaybackRate = 1,
   variant = "plate",
 }) => {
   const frame = useCurrentFrame();
@@ -249,6 +251,7 @@ const TitleCard: React.FC<{
               src={resolveAsset(backgroundSrc)}
               trimBefore={bgTrimBefore}
               trimAfter={bgTrimAfter}
+              playbackRate={backgroundPlaybackRate}
               style={{
                 width: "100%",
                 height: "100%",
@@ -508,6 +511,7 @@ export const CinematicRenderer: React.FC<CinematicRendererProps> = ({
               backgroundSrc={scene.backgroundSrc}
               backgroundTrimBeforeSeconds={scene.backgroundTrimBeforeSeconds}
               backgroundTrimAfterSeconds={scene.backgroundTrimAfterSeconds}
+              backgroundPlaybackRate={scene.backgroundPlaybackRate}
               variant={scene.variant}
             />
           )}

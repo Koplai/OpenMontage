@@ -31,6 +31,7 @@ import { ScreenshotScene } from "./components/ScreenshotScene";
 import type { ScreenshotStep } from "./components/ScreenshotScene";
 import { ProviderChip } from "./components/ProviderChip";
 import { resolveAsset } from "./lib/resolveAsset";
+import { normalizeCuts, type TimelineCut } from "./lib/timeline";
 import type { ParticleType } from "./components/ParticleOverlay";
 import { resolveTheme, type ThemeConfig, DEFAULT_THEME } from "./Root";
 
@@ -187,7 +188,7 @@ const AnimatedBackground: React.FC<{ theme: ThemeConfig }> = ({ theme }) => {
 // Types — aligned with edit_decisions artifact schema
 // ---------------------------------------------------------------------------
 
-interface Cut {
+interface Cut extends TimelineCut {
   id: string;
   source: string;
   in_seconds: number;
@@ -200,8 +201,7 @@ interface Cut {
   subtitle?: string;
   callout_type?: "info" | "warning" | "tip" | "quote";
   title?: string;
-  // Video source trim — seek to this point in the source before playback.
-  // Defaults to 0 (play from beginning). Use this instead of in_seconds for source trimming.
+  // Legacy raw props only. Canonical artifacts use in_seconds for source trim.
   source_in_seconds?: number;
   // Comparison props
   leftLabel?: string;
@@ -308,6 +308,7 @@ export interface ExplainerProps {
   overlays?: Overlay[];
   captions?: WordCaption[];
   audio?: AudioConfig;
+  timeline_mode?: "sequential" | "legacy";
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +421,8 @@ const ImageScene: React.FC<{ src: string; animation?: string }> = ({
 const VideoScene: React.FC<{
   src: string;
   startFrom?: number;
+  endAt?: number;
+  playbackRate?: number;
   transitionIn?: string;
   transitionOut?: string;
   transitionDuration?: number;
@@ -428,6 +431,8 @@ const VideoScene: React.FC<{
 }> = ({
   src,
   startFrom = 0,
+  endAt,
+  playbackRate = 1,
   transitionIn,
   transitionOut,
   transitionDuration,
@@ -463,6 +468,8 @@ const VideoScene: React.FC<{
       <OffthreadVideo
         src={resolveAsset(src)}
         startFrom={Math.round(startFrom * fps)}
+        endAt={endAt === undefined ? undefined : Math.round(endAt * fps)}
+        playbackRate={playbackRate}
         style={{
           width: "100%",
           height: "100%",
@@ -739,7 +746,7 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
         vignette={cut.vignette ?? true}
         lightingFrom={cut.lightingFrom}
         lightingTo={cut.lightingTo}
-        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        sceneDurationSeconds={cut.timeline_duration_seconds ?? (cut.out_seconds - cut.in_seconds)}
       />
     );
   }
@@ -756,10 +763,12 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
       <VideoScene
         src={cut.source}
         startFrom={cut.source_in_seconds ?? 0}
+        endAt={cut.out_seconds}
+        playbackRate={cut.speed ?? 1}
         transitionIn={cut.transition_in}
         transitionOut={cut.transition_out}
         transitionDuration={cut.transition_duration}
-        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        sceneDurationSeconds={cut.timeline_duration_seconds ?? (cut.out_seconds - cut.in_seconds)}
         backgroundColor={cut.backgroundColor}
       />,
     );
@@ -847,9 +856,9 @@ export const Explainer: React.FC<ExplainerProps> = (props) => {
       <AnimatedBackground theme={theme} />
 
       {/* Layer 1: Visual scenes */}
-      {cuts.map((cut) => {
-        const from = Math.round(cut.in_seconds * fps);
-        const duration = Math.round((cut.out_seconds - cut.in_seconds) * fps);
+      {normalizeCuts(cuts, props.timeline_mode).map((cut) => {
+        const from = Math.round(cut.timeline_start_seconds * fps);
+        const duration = Math.max(1, Math.round((cut.timeline_start_seconds + cut.timeline_duration_seconds) * fps) - from);
 
         return (
           <Sequence key={cut.id} from={from} durationInFrames={duration}>

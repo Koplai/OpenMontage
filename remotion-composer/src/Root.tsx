@@ -5,7 +5,8 @@ import {
   calculateCinematicMetadata,
 } from "./CinematicRenderer";
 import { signalFromTomorrowWithMusicFixture } from "./cinematic/fixtures";
-import { TalkingHead, TalkingHeadProps } from "./TalkingHead";
+import { TalkingHead, TalkingHeadProps, calculateTalkingHeadMetadata } from "./TalkingHead";
+import { timelineFrames } from "./lib/timeline";
 import {
   TitledVideo,
   calculateTitledVideoMetadata,
@@ -127,9 +128,7 @@ const calculateMetadata: CalculateMetadataFunction<ExplainerProps> = async ({
   if (cuts.length === 0) {
     return { durationInFrames: 30 * 60 };
   }
-  const lastEnd = Math.max(...cuts.map((c) => c.out_seconds || 0));
-  // Add 1 second padding for final fade
-  return { durationInFrames: Math.ceil((lastEnd + 1) * 30) };
+  return { durationInFrames: timelineFrames(cuts, 30, props.timeline_mode) };
 };
 
 export const Root: React.FC = () => {
@@ -178,7 +177,7 @@ export const Root: React.FC = () => {
       <Composition
         id="TalkingHead"
         component={TalkingHead}
-        durationInFrames={30 * 300}
+        durationInFrames={30}
         fps={30}
         width={1080}
         height={1920}
@@ -190,6 +189,7 @@ export const Root: React.FC = () => {
           fontSize: 52,
           highlightColor: "#22D3EE",
         }}
+        calculateMetadata={calculateTalkingHeadMetadata}
       />
       <Composition
         id="TitledVideo"

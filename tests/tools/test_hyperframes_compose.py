@@ -394,7 +394,13 @@ def test_hyperframes_render_resolves_relative_output_path_once(tmp_path, monkeyp
     tool = HyperFramesCompose()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(tool, "_runtime_check", lambda: {"runtime_available": True})
-    monkeypatch.setattr(tool, "_scaffold", lambda inputs: ToolResult(success=True, data={}))
+    def scaffold(inputs):
+        (Path(inputs["workspace_path"]) / "index.html").write_text(
+            '<main data-composition-id="root" data-duration="1"></main>'
+        )
+        return ToolResult(success=True)
+
+    monkeypatch.setattr(tool, "_scaffold", scaffold)
     monkeypatch.setattr(tool, "_lint", lambda inputs: ToolResult(success=True, data={}))
     monkeypatch.setattr(tool, "_validate", lambda inputs: ToolResult(success=True, data={}))
 
@@ -402,7 +408,11 @@ def test_hyperframes_render_resolves_relative_output_path_once(tmp_path, monkeyp
         output = Path(args[args.index("--output") + 1])
         rendered_output = output if output.is_absolute() else cwd / output
         rendered_output.parent.mkdir(parents=True, exist_ok=True)
-        rendered_output.write_bytes(b"rendered")
+        subprocess.run([
+            "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+            "testsrc2=size=320x240:duration=1:rate=30",
+            "-c:v", "libx264", "-preset", "ultrafast", str(rendered_output),
+        ], check=True, capture_output=True)
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(tool, "_run_hf", run_render)
@@ -1051,10 +1061,11 @@ def test_scaffold_workspace_generates_html_and_assets(tmp_path: Path):
     assert 'Hello HyperFrames' in html
 
     # Image asset was staged into the workspace.
-    staged = workspace / "assets" / "hero.png"
+    staged = Path(result.data["asset_copies"][0]["to"])
     assert staged.is_file()
+    assert staged.read_bytes() == asset.read_bytes()
     # And index.html references it via a relative path.
-    assert "assets/hero.png" in html
+    assert f"assets/{staged.name}" in html
 
     # hyperframes.json registry config was written.
     hf_json = workspace / "hyperframes.json"

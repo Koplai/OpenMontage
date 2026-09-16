@@ -26,6 +26,7 @@ export interface CinematicTitleScene extends CinematicBaseScene {
   backgroundSrc?: string;
   backgroundTrimBeforeSeconds?: number;
   backgroundTrimAfterSeconds?: number;
+  backgroundPlaybackRate?: number;
   variant?: "plate" | "overlay";
 }
 

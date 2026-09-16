@@ -19,11 +19,18 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import time
+import tempfile
 from pathlib import Path
 from typing import Any, Optional
+from html.parser import HTMLParser
+from urllib.parse import unquote, urlsplit
+
+from lib.render_timeline import normalize_cuts, require_sequential, timeline_duration
+from tools.video.video_compose import VideoCompose, _atomic_render, _validate_rendered_video
 
 from tools.base_tool import (
     BaseTool,
@@ -46,6 +53,7 @@ log = logging.getLogger("hyperframes_compose")
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp", ".gif"}
 _VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
 _AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
+HYPERFRAMES_VERSION = "0.8.40"
 
 
 class HyperFramesCompose(BaseTool):
@@ -62,12 +70,14 @@ class HyperFramesCompose(BaseTool):
     dependencies = ["cmd:npx", "cmd:ffmpeg"]
     install_instructions = (
         "Requires Node.js >= 22 (https://nodejs.org/) and FFmpeg "
-        "(https://ffmpeg.org/download.html). The HyperFrames CLI is fetched "
-        "on first use via `npx hyperframes` (npm package: `hyperframes`). "
+        "(https://ffmpeg.org/download.html). Install explicitly with "
+        f"`npm install --prefix remotion-composer --no-save hyperframes@{HYPERFRAMES_VERSION}` "
+        "(npm package: `hyperframes`). Status never downloads or executes it. "
         "Note: the upstream monorepo develops the package as `@hyperframes/cli`, "
         "but it publishes to npm as `hyperframes`. `npx @hyperframes/cli` "
         "returns 404 -- do NOT use that form. Verify setup with "
-        "`npx hyperframes doctor` or run the `doctor` operation on this tool."
+        f"`npx hyperframes@{HYPERFRAMES_VERSION} doctor` or run the explicitly requested "
+        "`doctor` operation on this tool. Rendering uses only the pinned installed CLI."
     )
     agent_skills = [
         "hyperframes",
@@ -153,6 +163,12 @@ class HyperFramesCompose(BaseTool):
             "output_path": {
                 "type": "string",
                 "description": "Output MP4 path. Used by render and render_existing.",
+            },
+            "audio_path": {"type": "string", "description": "Approved final mix, padded and muxed after rendering."},
+            "subtitle_path": {"type": "string", "description": "Approved subtitles, burned after rendering or explicitly blocked."},
+            "draft": {
+                "type": "boolean", "default": False,
+                "description": "Allow labeled missing-asset placeholders in scaffolds; never an accepted deliverable.",
             },
             "edit_decisions": {
                 "type": "object",
@@ -241,11 +257,8 @@ class HyperFramesCompose(BaseTool):
 
     _NODE_FLOOR_MAJOR = 22
     _NPM_PACKAGE = "hyperframes"  # published npm name (NOT @hyperframes/cli — that's 404)
-    # Process-level cache for the npm resolve check. Shape:
-    #   {"version": "0.4.5"}   → package resolves
-    #   {"error": "<short>"}   → resolution failed (offline, unpublished, etc.)
-    # We cache per-process so the first call pays ~2-5s and subsequent calls
-    # (get_info spam from the registry) are free.
+    # Retained for callers that reset the old cache; discovery is now passive
+    # and rereads local metadata so explicit installations become visible.
     _npm_resolve_cache: Optional[dict[str, str]] = None
     _cli_probe_cache: Optional[dict[str, str]] = None
 
@@ -270,106 +283,42 @@ class HyperFramesCompose(BaseTool):
 
     @classmethod
     def _resolve_npm_package(cls) -> dict[str, str]:
-        """Verify the `hyperframes` npm package actually resolves.
-
-        `_runtime_check` previously only verified that node/ffmpeg/npx existed
-        on PATH, which meant `runtime_available: True` on any machine with
-        Node + FFmpeg — even offline, even if npm was down, even if the
-        package was unpublished. This method performs a cheap
-        `npm view hyperframes version` (5s timeout) and caches the answer
-        for the rest of the process.
-
-        Returns {"version": "X.Y.Z"} on success, {"error": "<short>"} on any
-        failure (404, timeout, network error, npm missing). Never raises.
-        """
-        if cls._npm_resolve_cache is not None:
-            return cls._npm_resolve_cache
-
-        npm = shutil.which("npm")
-        if not npm:
-            cls._npm_resolve_cache = {"error": "npm not on PATH"}
-            return cls._npm_resolve_cache
-
-        try:
-            proc = subprocess.run(
-                [npm, "view", cls._NPM_PACKAGE, "version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-        except subprocess.TimeoutExpired:
-            cls._npm_resolve_cache = {"error": "timeout (5s) — offline or slow registry"}
-            return cls._npm_resolve_cache
-        except (OSError, subprocess.SubprocessError) as e:
-            cls._npm_resolve_cache = {"error": f"npm view failed: {type(e).__name__}"}
-            return cls._npm_resolve_cache
-
-        if proc.returncode != 0:
-            stderr = (proc.stderr or "").strip()
-            # Most common failure is 404 (package unpublished or name wrong).
-            if "404" in stderr or "E404" in stderr:
-                cls._npm_resolve_cache = {
-                    "error": f"npm package `{cls._NPM_PACKAGE}` not found (404)"
-                }
-            else:
-                tail = stderr.splitlines()[-1][:200] if stderr else f"exit {proc.returncode}"
-                cls._npm_resolve_cache = {"error": f"npm view failed: {tail}"}
-            return cls._npm_resolve_cache
-
-        version = (proc.stdout or "").strip()
-        if not version:
-            cls._npm_resolve_cache = {"error": "npm view returned empty version"}
-        else:
-            cls._npm_resolve_cache = {"version": version}
-        return cls._npm_resolve_cache
+        """Read only installed package metadata; never npm view/npx/doctor."""
+        repo = Path(__file__).resolve().parents[2]
+        candidates = [
+            repo / "remotion-composer/node_modules/hyperframes/package.json",
+            repo / "node_modules/hyperframes/package.json",
+        ]
+        executable = shutil.which("hyperframes")
+        if executable:
+            # Global npm links resolve into the installed package's bin/dist.
+            candidates.extend(p / "package.json" for p in Path(executable).resolve().parents)
+        for manifest in candidates:
+            if not manifest.is_file():
+                continue
+            try:
+                package = json.loads(manifest.read_text(encoding="utf-8"))
+                if package.get("name") != cls._NPM_PACKAGE:
+                    continue
+                if package.get("version") != HYPERFRAMES_VERSION:
+                    continue
+                binary = package.get("bin", {})
+                relative = binary if isinstance(binary, str) else binary.get("hyperframes")
+                entry = (manifest.parent / relative).resolve() if relative else None
+                if entry and entry.is_file():
+                    return {"version": HYPERFRAMES_VERSION, "entry": str(entry)}
+            except (OSError, ValueError, TypeError):
+                continue
+        return {"error": f"hyperframes@{HYPERFRAMES_VERSION} is not installed with a valid CLI entry"}
 
     @classmethod
     def _probe_cli(cls) -> dict[str, str]:
-        """Run the published CLI's doctor command once per process.
-
-        Package resolution alone does not prove that the executable can start:
-        an upstream packaging regression can publish successfully while every
-        CLI command crashes during bootstrap. Provider preflight must not call
-        that state available.
-        """
-        if cls._cli_probe_cache is not None:
-            return cls._cli_probe_cache
-
-        npx = shutil.which("npx")
-        if not npx:
-            cls._cli_probe_cache = {"error": "npx not on PATH"}
-            return cls._cli_probe_cache
-
-        try:
-            proc = subprocess.run(
-                [npx, "--yes", cls._NPM_PACKAGE, "doctor", "--json"],
-                capture_output=True,
-                text=True,
-                timeout=20,
-            )
-        except subprocess.TimeoutExpired:
-            cls._cli_probe_cache = {"error": "doctor timed out after 20s"}
-            return cls._cli_probe_cache
-        except (OSError, subprocess.SubprocessError) as exc:
-            cls._cli_probe_cache = {"error": f"doctor failed: {type(exc).__name__}"}
-            return cls._cli_probe_cache
-
-        if proc.returncode != 0:
-            output = "\n".join(filter(None, [proc.stderr, proc.stdout])).strip()
-            tail = output.splitlines()[-1][:200] if output else f"exit {proc.returncode}"
-            cls._cli_probe_cache = {"error": f"doctor failed: {tail}"}
-        else:
-            cls._cli_probe_cache = {"status": "ok"}
-        return cls._cli_probe_cache
+        """Passive installed-entry check. Only explicit doctor runs the CLI."""
+        installed = cls._resolve_npm_package()
+        return {"error": installed["error"]} if "error" in installed else {"status": "installed; doctor not run"}
 
     def _runtime_check(self) -> dict[str, Any]:
-        """Return availability state for the HyperFrames runtime.
-
-        Checks BOTH local binaries (node >= 22, ffmpeg, npx) AND that the
-        `hyperframes` npm package actually resolves. A missing/404 package
-        counts as unavailable — `runtime_available: True` means the runtime
-        can genuinely run end-to-end, not just that the local tooling exists.
-        """
+        """Report installed availability, not an active browser/doctor certification."""
         node_major = self._node_major_version()
         ffmpeg_ok = shutil.which("ffmpeg") is not None
         npx_ok = shutil.which("npx") is not None
@@ -381,13 +330,10 @@ class HyperFramesCompose(BaseTool):
             reasons.append(
                 f"node major version {node_major} < required {self._NODE_FLOOR_MAJOR}"
             )
-        if not npx_ok:
-            reasons.append("npx not found on PATH")
         if not ffmpeg_ok:
             reasons.append("ffmpeg not found on PATH")
 
-        # Only probe npm if the local tooling is actually usable — otherwise
-        # a missing-node run would also show a confusing npm error.
+        # Inspect installed metadata only after checking the local tooling.
         npm_resolve: dict[str, str] = {}
         if not reasons:
             npm_resolve = self._resolve_npm_package()
@@ -410,6 +356,7 @@ class HyperFramesCompose(BaseTool):
             "npx_available": npx_ok,
             "npm_package": self._NPM_PACKAGE,
             "npm_package_version": npm_resolve.get("version"),
+            "required_version": HYPERFRAMES_VERSION,
             "npm_resolve_error": npm_resolve.get("error"),
             "cli_probe_status": cli_probe.get("status"),
             "cli_probe_error": cli_probe.get("error"),
@@ -506,8 +453,7 @@ class HyperFramesCompose(BaseTool):
                 data=out,
             )
 
-        # Ask the CLI itself for a deeper check. This also warms the npm
-        # cache so the first real render doesn't pay the download cost.
+        # Doctor is explicit. Unlike status, it may launch runtime diagnostics.
         try:
             proc = self._run_hf(["doctor"], cwd=None, timeout=180, check=False)
             out["cli_doctor"] = {
@@ -537,7 +483,10 @@ class HyperFramesCompose(BaseTool):
         meant for humans bootstrapping a project by hand.
         """
         workspace = self._require_workspace(inputs)
+        inputs = VideoCompose._prepare_media_inputs(inputs, canonical_audio_supported=True)
         edit_decisions = inputs.get("edit_decisions") or {}
+        if edit_decisions.get("render_runtime") not in (None, "", "hyperframes"):
+            raise ValueError("HyperFrames cannot execute a different locked render_runtime")
         asset_manifest = inputs.get("asset_manifest") or {}
         playbook = inputs.get("playbook") or {}
         profile_name = inputs.get("profile")
@@ -555,18 +504,28 @@ class HyperFramesCompose(BaseTool):
         assets_dir = workspace / "assets"
         assets_dir.mkdir(exist_ok=True)
 
-        # Resolve asset IDs → file paths + copy into workspace.
-        resolved_cuts, asset_copies = self._resolve_and_stage_assets(
-            edit_decisions.get("cuts", []),
-            asset_manifest.get("assets", []),
-            workspace,
-        )
-
+        audio = edit_decisions.get("audio", {})
+        if not audio.get("music") and edit_decisions.get("music"):
+            audio = {**audio, "music": edit_decisions["music"]}
         audio_refs = self._resolve_audio_refs(
-            edit_decisions.get("audio", {}),
+            {} if inputs.get("audio_path") else audio,
             asset_manifest.get("assets", []),
             workspace,
         )
+        # Validate audio before any cut's FFmpeg speed materialization.
+        resolved_cuts, asset_copies = self._resolve_and_stage_assets(
+            edit_decisions.get("cuts", []), asset_manifest.get("assets", []),
+            workspace, draft=bool(inputs.get("draft")),
+        )
+        for cut in resolved_cuts:
+            source = Path(cut.get("source") or "")
+            if source.suffix.lower() in _VIDEO_EXTENSIONS:
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "error", "-select_streams", "a",
+                     "-show_entries", "stream=codec_type", "-of", "json", str(source)],
+                    capture_output=True, text=True, timeout=30, check=True,
+                )
+                cut["_has_audio"] = bool(json.loads(probe.stdout).get("streams"))
 
         # Style bridge: playbook → CSS custom properties + DESIGN.md.
         css_vars, design_md = self._style_bridge(playbook, edit_decisions)
@@ -616,6 +575,9 @@ class HyperFramesCompose(BaseTool):
                 "total_duration_seconds": total_duration,
                 "cut_count": len(resolved_cuts),
                 "asset_copies": asset_copies,
+                "deliverable_accepted": False,
+                "draft": bool(inputs.get("draft")),
+                "missing_references": [c["_missing_reference"] for c in resolved_cuts if c.get("_missing_reference")],
             },
             artifacts=[str(workspace / "index.html")],
         )
@@ -763,6 +725,7 @@ class HyperFramesCompose(BaseTool):
             error=None if ok else f"hyperframes add {block} exit {proc.returncode}",
         )
 
+    @_atomic_render(lambda inputs: str(Path(inputs.get("workspace_path", ".")) / "renders" / "final.mp4"))
     def _render(self, inputs: dict[str, Any]) -> ToolResult:
         """Full pipeline: scaffold → lint → validate → render."""
         runtime_ok = self._runtime_check()
@@ -778,7 +741,13 @@ class HyperFramesCompose(BaseTool):
                 data={"runtime_check": runtime_ok},
             )
 
-        workspace = self._require_workspace(inputs)
+        inputs = VideoCompose._prepare_media_inputs(inputs, canonical_audio_supported=True)
+        VideoCompose._require_subtitle_renderer(inputs)
+        workspace_root = self._require_workspace(inputs)
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        # Never scaffold two invocations over one another's HTML/assets.
+        workspace = Path(tempfile.mkdtemp(prefix="render-", dir=workspace_root))
+        inputs = {**inputs, "workspace_path": str(workspace)}
         output_path = Path(
             inputs.get("output_path") or (workspace / "renders" / "final.mp4")
         ).expanduser().resolve()
@@ -795,6 +764,7 @@ class HyperFramesCompose(BaseTool):
                 error=f"Scaffold failed: {scaffold.error}",
                 data={"steps": steps},
             )
+        self._validate_workspace_references(workspace)
 
         # 2. Lint — static contract checks.
         lint = self._lint({"workspace_path": str(workspace)})
@@ -860,6 +830,7 @@ class HyperFramesCompose(BaseTool):
                 data={"steps": steps},
             )
 
+        applied = VideoCompose()._apply_external_media(output_path, inputs)
         return ToolResult(
             success=True,
             data={
@@ -871,10 +842,15 @@ class HyperFramesCompose(BaseTool):
                 "fps": fps,
                 "quality": quality,
                 "steps": steps,
+                "executed_runtime": "hyperframes",
+                "deliverable_accepted": False,
+                "draft": bool(inputs.get("draft")),
+                **applied,
             },
             artifacts=[str(output_path)],
         )
 
+    @_atomic_render(lambda inputs: str(Path(inputs.get("workspace_path", ".")) / "renders" / "final.mp4"))
     def _render_existing(self, inputs: dict[str, Any]) -> ToolResult:
         """Validate and render a hand-authored workspace without scaffolding it.
 
@@ -882,6 +858,10 @@ class HyperFramesCompose(BaseTool):
         Re-running `_scaffold` would destroy that authored work, so this path
         performs the mandatory gates against the files already on disk.
         """
+        # Canonical audio cannot be inserted into arbitrary authored HTML.
+        # Require the approved mix rather than silently ignoring these refs.
+        inputs = VideoCompose._prepare_media_inputs(inputs)
+        VideoCompose._require_subtitle_renderer(inputs)
         runtime_ok = self._runtime_check()
         if not runtime_ok["runtime_available"]:
             return ToolResult(
@@ -907,6 +887,15 @@ class HyperFramesCompose(BaseTool):
         ).expanduser().resolve()
         output_path.parent.mkdir(parents=True, exist_ok=True)
         steps: dict[str, Any] = {}
+        self._validate_workspace_references(workspace)
+        authored_workspace = workspace
+        # The CLI's checks/cache/snapshots must not race over an authored tree.
+        workspace = output_path.parent / "authored-workspace"
+        shutil.copytree(
+            authored_workspace, workspace,
+            ignore=shutil.ignore_patterns(".render-*", ".git"),
+        )
+        self._validate_workspace_references(workspace)
 
         quality_check = self._check(
             {
@@ -953,36 +942,82 @@ class HyperFramesCompose(BaseTool):
                 error=f"HyperFrames exited 0 but output is missing: {output_path}",
                 data={"steps": steps},
             )
-        if self._file_digest(entry) != original_digest:
+        if self._file_digest(entry) != original_digest or self._file_digest(workspace / "index.html") != original_digest:
             return ToolResult(
                 success=False,
                 error="Authored index.html changed during render_existing.",
                 data={"steps": steps},
             )
 
+        applied = VideoCompose()._apply_external_media(output_path, inputs)
         return ToolResult(
             success=True,
             data={
                 "operation": "render_existing",
                 "output": str(output_path),
-                "workspace": str(workspace),
+                "workspace": str(authored_workspace),
                 "fps": fps,
                 "quality": quality,
                 "authored_entry_preserved": True,
                 "steps": steps,
+                "executed_runtime": "hyperframes",
+                "deliverable_accepted": False,
+                **applied,
             },
             artifacts=[str(output_path)],
         )
 
     @staticmethod
     def _file_digest(path: Path) -> str:
-        import hashlib
-
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        from lib.delivery_validation import content_sha256
+        return content_sha256(path)
 
     # ------------------------------------------------------------------
     # Workspace generation helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_workspace_references(workspace: Path) -> None:
+        """Check the static HTML/CSS media graph locally before browser execution.
+
+        Computed JavaScript references remain the runtime check's responsibility.
+        This does not fetch remote resources or certify authored code as trusted.
+        """
+        class References(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.refs: list[str] = []
+
+            def handle_starttag(self, tag, attrs):
+                for key, value in attrs:
+                    if value and (key in {"src", "poster", "data-composition-src"}
+                                  or (tag == "link" and key == "href")):
+                        self.refs.append(value)
+
+        pending = [workspace / "index.html"]
+        seen: set[Path] = set()
+        while pending:
+            document = pending.pop().resolve()
+            if document in seen:
+                continue
+            seen.add(document)
+            text = document.read_text(encoding="utf-8")
+            refs: list[str] = []
+            if document.suffix.lower() in {".html", ".htm"}:
+                parser = References()
+                parser.feed(text)
+                refs.extend(parser.refs)
+            refs.extend(re.findall(r"url\(\s*['\"]?([^'\"\s)]+)", text))
+            for reference in refs:
+                parsed = urlsplit(reference)
+                if parsed.scheme in {"http", "https", "data", "blob"} or parsed.netloc or not parsed.path:
+                    continue
+                path = (workspace / unquote(parsed.path).lstrip("/") if parsed.path.startswith("/")
+                        else document.parent / unquote(parsed.path)).resolve()
+                if not HyperFramesCompose._is_inside(path, workspace) or not path.is_file():
+                    raise ValueError(f"Required authored reference not found inside workspace: {reference}")
+                if path.suffix.lower() in {".html", ".htm", ".css"}:
+                    pending.append(path)
 
     @staticmethod
     def _require_workspace(inputs: dict[str, Any]) -> Path:
@@ -1007,15 +1042,27 @@ class HyperFramesCompose(BaseTool):
 
     @staticmethod
     def _compute_total_duration(cuts: list[dict]) -> float:
-        if not cuts:
-            return 0.0
-        return max(float(c.get("out_seconds", 0) or 0) for c in cuts)
+        return timeline_duration(cuts)
+
+    def _stage_asset(self, source: Path, workspace: Path) -> Path:
+        if not source.is_file():
+            raise ValueError(f"Required media not found: {source}")
+        if self._is_inside(source, workspace):
+            return source.resolve()
+        digest = self._file_digest(source)
+        dest = workspace / "assets" / f"{digest}{source.suffix.lower()}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if not dest.exists() or self._file_digest(dest) != digest:
+            shutil.copy2(source, dest)
+        return dest
 
     def _resolve_and_stage_assets(
         self,
         cuts: list[dict],
         assets: list[dict],
         workspace: Path,
+        *,
+        draft: bool = False,
     ) -> tuple[list[dict], list[dict[str, str]]]:
         """Resolve asset IDs in cuts[].source, copy files into workspace/assets/.
 
@@ -1028,18 +1075,47 @@ class HyperFramesCompose(BaseTool):
         assets_dir = workspace / "assets"
         copies: list[dict[str, str]] = []
         resolved: list[dict] = []
+        cuts = normalize_cuts(cuts)
+        require_sequential(cuts)
+        for cut in cuts:
+            source = cut.get("source", "")
+            source = asset_lookup.get(source, {}).get("path", source)
+            if source and not Path(source).is_file() and not draft:
+                raise ValueError(f"Required cut source not found: {source}")
         for cut in cuts:
             source = cut.get("source", "")
             resolved_cut = dict(cut)
             if source in asset_lookup:
                 resolved_cut["source"] = asset_lookup[source].get("path", source)
             src_path = Path(resolved_cut["source"]) if resolved_cut.get("source") else None
-            if src_path and src_path.exists() and not self._is_inside(src_path, workspace):
-                dest = assets_dir / src_path.name
-                if not dest.exists() or dest.stat().st_size != src_path.stat().st_size:
-                    shutil.copy2(src_path, dest)
+            if src_path and src_path.is_file():
+                dest = self._stage_asset(src_path, workspace)
                 resolved_cut["source"] = str(dest)
                 copies.append({"from": str(src_path), "to": str(dest)})
+                if dest.suffix.lower() in _VIDEO_EXTENSIONS and cut["speed"] != 1:
+                    # HF 0.8.40 has no playback-rate contract. Materialize the
+                    # approved trim/speed locally rather than invent an ignored
+                    # data attribute or silently play at normal speed.
+                    retimed = assets_dir / f"retimed-{secrets.token_hex(8)}.mp4"
+                    speed = cut["speed"]
+                    self.run_command([
+                        "ffmpeg", "-y", "-ss", str(cut["in_seconds"]),
+                        "-t", str(cut["out_seconds"] - cut["in_seconds"]),
+                        "-i", str(dest), "-map", "0:v:0", "-map", "0:a?",
+                        "-vf", f"setpts=(PTS-STARTPTS)/{speed},fps=30",
+                        "-af", VideoCompose._build_atempo(speed),
+                        "-c:v", "libx264", "-c:a", "aac",
+                        "-t", str(cut["timeline_duration_seconds"]), str(retimed),
+                    ])
+                    _validate_rendered_video(retimed)
+                    resolved_cut["source"] = str(retimed)
+                    resolved_cut["_media_start_seconds"] = 0
+            elif source:
+                resolved_cut["_missing_reference"] = str(source)
+                resolved_cut["_draft_placeholder"] = True
+                resolved_cut["source"] = ""
+            elif draft:
+                resolved_cut["_draft_placeholder"] = True
             resolved.append(resolved_cut)
         return resolved, copies
 
@@ -1051,22 +1127,16 @@ class HyperFramesCompose(BaseTool):
     ) -> dict[str, Any]:
         """Resolve narration / music asset IDs and stage them."""
         asset_lookup = {a["id"]: a for a in assets if "id" in a}
-        assets_dir = workspace / "assets"
         out: dict[str, Any] = {"narration": [], "music": None}
+        if audio.get("sfx"):
+            raise ValueError("HyperFrames SFX require an approved mixed audio_path")
 
         for seg in audio.get("narration", {}).get("segments", []) or []:
             aid = seg.get("asset_id")
-            if not aid or aid not in asset_lookup:
-                continue
-            src = Path(asset_lookup[aid].get("path", ""))
-            if not src.exists():
-                continue
-            if not self._is_inside(src, workspace):
-                dest = assets_dir / src.name
-                if not dest.exists() or dest.stat().st_size != src.stat().st_size:
-                    shutil.copy2(src, dest)
-            else:
-                dest = src
+            if not aid:
+                raise ValueError("Narration segment requires asset_id")
+            src = Path(asset_lookup.get(aid, {}).get("path") or aid)
+            dest = self._stage_asset(src, workspace)
             out["narration"].append(
                 {
                     "src": str(dest),
@@ -1077,21 +1147,15 @@ class HyperFramesCompose(BaseTool):
 
         music = audio.get("music", {})
         m_id = music.get("asset_id")
-        if m_id and m_id in asset_lookup:
-            src = Path(asset_lookup[m_id].get("path", ""))
-            if src.exists():
-                if not self._is_inside(src, workspace):
-                    dest = assets_dir / src.name
-                    if not dest.exists() or dest.stat().st_size != src.stat().st_size:
-                        shutil.copy2(src, dest)
-                else:
-                    dest = src
-                out["music"] = {
-                    "src": str(dest),
-                    "volume": float(music.get("volume", 0.15) or 0.15),
-                    "fade_in_seconds": float(music.get("fade_in_seconds", 0) or 0),
-                    "fade_out_seconds": float(music.get("fade_out_seconds", 0) or 0),
-                }
+        if m_id:
+            if music.get("ducking") or music.get("fade_in_seconds") or music.get("fade_out_seconds"):
+                raise ValueError("HyperFrames music fades/ducking require an approved mixed audio_path")
+            src = Path(asset_lookup.get(m_id, {}).get("path") or m_id)
+            dest = self._stage_asset(src, workspace)
+            out["music"] = {
+                "src": str(dest),
+                "volume": float(0.15 if music.get("volume") is None else music["volume"]),
+            }
 
         return out
 
@@ -1266,9 +1330,9 @@ class HyperFramesCompose(BaseTool):
     ) -> tuple[str, Optional[str]]:
         """Render one cut + its entrance tween. Returns (html, tween or None)."""
         cut_id = f"cut-{index}"
-        in_s = float(cut.get("in_seconds", 0) or 0)
-        out_s = float(cut.get("out_seconds", 0) or 0)
-        duration = max(0.1, out_s - in_s)
+        cut = normalize_cuts([cut])[0]
+        in_s = cut["timeline_start_seconds"]
+        duration = cut["timeline_duration_seconds"]
 
         source = cut.get("source") or ""
         cut_type = (cut.get("type") or "").lower()
@@ -1315,8 +1379,16 @@ class HyperFramesCompose(BaseTool):
                 f'<video id="{cut_id}" class="clip video-clip" '
                 f'src="{self._escape_attr(rel)}" '
                 f'data-start="{self._f(in_s)}" data-duration="{self._f(duration)}" '
+                f'data-media-start="{self._f(cut.get("_media_start_seconds", cut["in_seconds"]))}" '
                 f'data-track-index="1" muted playsinline></video>'
             )
+            if cut.get("_has_audio"):
+                html += (
+                    f'<audio id="{cut_id}-audio" src="{self._escape_attr(rel)}" '
+                    f'data-start="{self._f(in_s)}" data-duration="{self._f(duration)}" '
+                    f'data-media-start="{self._f(cut.get("_media_start_seconds", cut["in_seconds"]))}" '
+                    f'data-track-index="4" data-volume="1"></audio>'
+                )
             return html, None
 
         # Unknown cut shape — render a placeholder text card so the render
@@ -1334,7 +1406,9 @@ class HyperFramesCompose(BaseTool):
             )
             return html, None
 
-        placeholder = self._escape_text(text or cut.get("reason") or f"Scene {index + 1}")
+        if not cut.get("_draft_placeholder"):
+            raise ValueError(f"Unsupported or missing required HyperFrames cut: {source or cut.get('id')}")
+        placeholder = self._escape_text(text or cut.get("reason") or f"DRAFT: Scene {index + 1}")
         html = (
             f'<div id="{cut_id}" class="clip text-card" '
             f'data-start="{self._f(in_s)}" data-duration="{self._f(duration)}" '
@@ -1354,15 +1428,19 @@ class HyperFramesCompose(BaseTool):
         timeout: int,
         check: bool,
     ) -> subprocess.CompletedProcess:
-        """Invoke `npx hyperframes <args>` with the right Windows quirks.
+        """Invoke the pinned installed CLI entry without a package manager.
 
         We intentionally bypass `self.run_command` here because we do NOT
         want to raise CalledProcessError on non-zero exits — the caller
         parses lint/validate/render exit codes itself.
         """
-        cmd = ["npx", "--yes", "hyperframes", *args]
-        # On Windows, resolve the .cmd wrapper so subprocess can find it
-        # without shell=True.
+        installed = self._resolve_npm_package()
+        if "error" in installed:
+            return subprocess.CompletedProcess(
+                args=args, returncode=127, stdout="", stderr=installed["error"],
+            )
+        cmd = [shutil.which("node") or "node", installed["entry"], *args]
+        # Resolve the Node executable on Windows without shell=True.
         if os.name == "nt":
             resolved = shutil.which(cmd[0])
             if resolved:
@@ -1382,9 +1460,13 @@ class HyperFramesCompose(BaseTool):
             return subprocess.CompletedProcess(
                 args=cmd,
                 returncode=124,
-                stdout=e.stdout or "",
-                stderr=(e.stderr or "") + f"\n[timeout after {timeout}s]",
+                stdout=self._as_text(e.stdout),
+                stderr=self._as_text(e.stderr) + f"\n[timeout after {timeout}s]",
             )
+
+    @staticmethod
+    def _as_text(value: str | bytes | None) -> str:
+        return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value or ""
 
     @staticmethod
     def _parse_json_output(stdout: str) -> Optional[Any]:
